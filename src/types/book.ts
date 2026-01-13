@@ -158,3 +158,19 @@ export interface BookSearchState {
   error: string | null;
   hasSearched: boolean;
 }
+
+// Reading list types
+export type ReadingStatus = 'reading' | 'want_to_read' | 'finished';
+
+export interface ReadingListItem {
+  book: Book;
+  status: ReadingStatus;
+  dateAdded: string; // ISO date string
+  dateUpdated?: string; // ISO date string
+}
+
+export const READING_STATUS_OPTIONS: { value: ReadingStatus; label: string }[] = [
+  { value: 'reading', label: 'Currently Reading' },
+  { value: 'want_to_read', label: 'Want to Read' },
+  { value: 'finished', label: 'Finished' },
+];

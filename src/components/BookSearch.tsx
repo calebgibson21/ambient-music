@@ -11,10 +11,11 @@ import {
   Dimensions,
   ScrollView,
 } from 'react-native';
-import { Book, BookDetails, Genre, POPULAR_GENRES } from '../types/book';
+import { Book, BookDetails, Genre, POPULAR_GENRES, ReadingStatus, READING_STATUS_OPTIONS } from '../types/book';
 import { useBookSearch } from '../hooks/useBookSearch';
 import { useBookDetailsAuto } from '../hooks/useBookDetails';
 import { useSubjectBrowse } from '../hooks/useSubjectBrowse';
+import { useReadingList } from '../hooks/useReadingList';
 import { SearchFilters } from './SearchFilters';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -136,9 +137,23 @@ interface SelectedBookViewProps {
   details: BookDetails | null;
   isLoadingDetails: boolean;
   onBack: () => void;
+  isInReadingList: boolean;
+  currentStatus: ReadingStatus | undefined;
+  onAddToList: (status: ReadingStatus) => void;
+  onRemoveFromList: () => void;
 }
 
-function SelectedBookView({ book, details, isLoadingDetails, onBack }: SelectedBookViewProps) {
+function SelectedBookView({ 
+  book, 
+  details, 
+  isLoadingDetails, 
+  onBack,
+  isInReadingList,
+  currentStatus,
+  onAddToList,
+  onRemoveFromList,
+}: SelectedBookViewProps) {
+  const [showStatusPicker, setShowStatusPicker] = useState(false);
   const author = details?.author;
   const description = details?.description;
   const fullSubjects = details?.fullSubjects || book.subjects;
@@ -246,10 +261,68 @@ function SelectedBookView({ book, details, isLoadingDetails, onBack }: SelectedB
           </View>
         )}
 
-        {/* Action Button */}
+        {/* Action Buttons */}
         <TouchableOpacity style={styles.matchMusicButton}>
           <Text style={styles.matchMusicButtonText}>Find Ambient Music</Text>
         </TouchableOpacity>
+
+        {/* Reading List Button */}
+        {isInReadingList ? (
+          <View style={styles.readingListSection}>
+            <View style={styles.inListBadge}>
+              <Text style={styles.inListBadgeText}>
+                {READING_STATUS_OPTIONS.find(o => o.value === currentStatus)?.label || 'In List'}
+              </Text>
+            </View>
+            <View style={styles.readingListActions}>
+              <TouchableOpacity 
+                style={styles.changeStatusButton}
+                onPress={() => setShowStatusPicker(!showStatusPicker)}
+              >
+                <Text style={styles.changeStatusButtonText}>Change Status</Text>
+              </TouchableOpacity>
+              <TouchableOpacity 
+                style={styles.removeFromListButton}
+                onPress={onRemoveFromList}
+              >
+                <Text style={styles.removeFromListButtonText}>Remove</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        ) : (
+          <TouchableOpacity 
+            style={styles.addToListButton}
+            onPress={() => setShowStatusPicker(!showStatusPicker)}
+          >
+            <Text style={styles.addToListButtonText}>+ Add to Reading List</Text>
+          </TouchableOpacity>
+        )}
+
+        {/* Status Picker */}
+        {showStatusPicker && (
+          <View style={styles.statusPicker}>
+            {READING_STATUS_OPTIONS.map((option) => (
+              <TouchableOpacity
+                key={option.value}
+                style={[
+                  styles.statusOption,
+                  currentStatus === option.value && styles.statusOptionSelected,
+                ]}
+                onPress={() => {
+                  onAddToList(option.value);
+                  setShowStatusPicker(false);
+                }}
+              >
+                <Text style={[
+                  styles.statusOptionText,
+                  currentStatus === option.value && styles.statusOptionTextSelected,
+                ]}>
+                  {option.label}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        )}
 
         <View style={styles.bottomPadding} />
       </View>
@@ -291,6 +364,8 @@ export function BookSearch() {
 
   const { details, isLoading: isLoadingDetails } = useBookDetailsAuto(selectedBook);
 
+  const { addBook, removeBook, isInList, getItemByBookId } = useReadingList();
+
   // Determine which results to show
   const isSearchMode = query.trim().length > 0 || hasSearched;
   const isBrowseMode = selectedGenre !== null;
@@ -316,12 +391,17 @@ export function BookSearch() {
 
   // Show selected book view
   if (selectedBook) {
+    const readingListItem = getItemByBookId(selectedBook.id);
     return (
       <SelectedBookView
         book={selectedBook}
         details={details}
         isLoadingDetails={isLoadingDetails}
         onBack={clearSelection}
+        isInReadingList={isInList(selectedBook.id)}
+        currentStatus={readingListItem?.status}
+        onAddToList={(status) => addBook(selectedBook, status)}
+        onRemoveFromList={() => removeBook(selectedBook.id)}
       />
     );
   }
@@ -844,6 +924,97 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     letterSpacing: 0.3,
   },
+
+  // Reading List Styles
+  readingListSection: {
+    marginTop: 20,
+    alignItems: 'center',
+  },
+  inListBadge: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    backgroundColor: 'rgba(74, 222, 128, 0.15)',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(74, 222, 128, 0.3)',
+    marginBottom: 12,
+  },
+  inListBadgeText: {
+    color: '#4ADE80',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  readingListActions: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  changeStatusButton: {
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    backgroundColor: '#1A1A24',
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#27272A',
+  },
+  changeStatusButtonText: {
+    color: '#A1A1AA',
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  removeFromListButton: {
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    backgroundColor: 'rgba(239, 68, 68, 0.1)',
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(239, 68, 68, 0.2)',
+  },
+  removeFromListButtonText: {
+    color: '#EF4444',
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  addToListButton: {
+    marginTop: 16,
+    paddingHorizontal: 28,
+    paddingVertical: 14,
+    backgroundColor: '#1A1A24',
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: '#A78BFA',
+  },
+  addToListButtonText: {
+    color: '#A78BFA',
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  statusPicker: {
+    marginTop: 16,
+    width: '100%',
+    backgroundColor: '#18181F',
+    borderRadius: 16,
+    padding: 8,
+    borderWidth: 1,
+    borderColor: '#27272A',
+  },
+  statusOption: {
+    paddingHorizontal: 20,
+    paddingVertical: 14,
+    borderRadius: 12,
+  },
+  statusOptionSelected: {
+    backgroundColor: 'rgba(167, 139, 250, 0.15)',
+  },
+  statusOptionText: {
+    color: '#A1A1AA',
+    fontSize: 15,
+    fontWeight: '500',
+    textAlign: 'center',
+  },
+  statusOptionTextSelected: {
+    color: '#A78BFA',
+  },
+
   bottomPadding: {
     height: 50,
   },
