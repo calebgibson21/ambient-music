@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -9,11 +9,19 @@ import {
   StyleSheet,
   ActivityIndicator,
   Dimensions,
+  ScrollView,
 } from 'react-native';
-import { Book } from '../types/book';
+import { Book, BookDetails, Genre, POPULAR_GENRES } from '../types/book';
 import { useBookSearch } from '../hooks/useBookSearch';
+import { useBookDetailsAuto } from '../hooks/useBookDetails';
+import { useSubjectBrowse } from '../hooks/useSubjectBrowse';
+import { SearchFilters } from './SearchFilters';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
+
+// ============================================================================
+// Book Card Component
+// ============================================================================
 
 interface BookCardProps {
   book: Book;
@@ -51,27 +59,98 @@ function BookCard({ book, onPress }: BookCardProps) {
             {book.authors.join(', ')}
           </Text>
         )}
-        {book.year && (
-          <Text style={styles.bookYear}>{book.year}</Text>
-        )}
+        <View style={styles.bookMeta}>
+          {book.year && (
+            <Text style={styles.bookYear}>{book.year}</Text>
+          )}
+          {book.editionCount && book.editionCount > 1 && (
+            <View style={styles.editionBadge}>
+              <Text style={styles.editionBadgeText}>
+                {book.editionCount} editions
+              </Text>
+            </View>
+          )}
+        </View>
       </View>
     </TouchableOpacity>
   );
 }
 
+// ============================================================================
+// Genre Chips Component
+// ============================================================================
+
+interface GenreChipsProps {
+  selectedGenre: Genre | null;
+  onSelectGenre: (genre: Genre) => void;
+  onClearGenre: () => void;
+}
+
+function GenreChips({ selectedGenre, onSelectGenre, onClearGenre }: GenreChipsProps) {
+  return (
+    <View style={styles.genreSection}>
+      <View style={styles.genreHeader}>
+        <Text style={styles.genreSectionTitle}>Browse by Genre</Text>
+        {selectedGenre && (
+          <TouchableOpacity onPress={onClearGenre}>
+            <Text style={styles.clearGenreText}>Clear</Text>
+          </TouchableOpacity>
+        )}
+      </View>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.genreChipsContainer}
+      >
+        {POPULAR_GENRES.map((genre) => (
+          <TouchableOpacity
+            key={genre}
+            style={[
+              styles.genreChip,
+              selectedGenre === genre && styles.genreChipSelected,
+            ]}
+            onPress={() => onSelectGenre(genre)}
+            activeOpacity={0.7}
+          >
+            <Text
+              style={[
+                styles.genreChipText,
+                selectedGenre === genre && styles.genreChipTextSelected,
+              ]}
+            >
+              {genre}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </ScrollView>
+    </View>
+  );
+}
+
+// ============================================================================
+// Selected Book View Component (Enhanced with details)
+// ============================================================================
+
 interface SelectedBookViewProps {
   book: Book;
+  details: BookDetails | null;
+  isLoadingDetails: boolean;
   onBack: () => void;
 }
 
-function SelectedBookView({ book, onBack }: SelectedBookViewProps) {
+function SelectedBookView({ book, details, isLoadingDetails, onBack }: SelectedBookViewProps) {
+  const author = details?.author;
+  const description = details?.description;
+  const fullSubjects = details?.fullSubjects || book.subjects;
+
   return (
-    <View style={styles.selectedContainer}>
+    <ScrollView style={styles.selectedContainer} showsVerticalScrollIndicator={false}>
       <TouchableOpacity onPress={onBack} style={styles.backButton}>
         <Text style={styles.backButtonText}>← Back to search</Text>
       </TouchableOpacity>
-      
+
       <View style={styles.selectedContent}>
+        {/* Cover Image */}
         <View style={styles.selectedCoverContainer}>
           {book.coverUrl ? (
             <Image
@@ -87,15 +166,35 @@ function SelectedBookView({ book, onBack }: SelectedBookViewProps) {
             </View>
           )}
         </View>
-        
+
+        {/* Title */}
         <Text style={styles.selectedTitle}>{book.title}</Text>
-        
-        {book.authors.length > 0 && (
-          <Text style={styles.selectedAuthor}>
-            by {book.authors.join(', ')}
-          </Text>
+
+        {/* Author Section (Enhanced) */}
+        {(book.authors.length > 0 || author) && (
+          <View style={styles.authorSection}>
+            {author?.photoUrl && (
+              <Image
+                source={{ uri: author.photoUrl }}
+                style={styles.authorPhoto}
+                resizeMode="cover"
+              />
+            )}
+            <View style={styles.authorInfo}>
+              <Text style={styles.selectedAuthor}>
+                by {author?.name || book.authors.join(', ')}
+              </Text>
+              {author?.birthDate && (
+                <Text style={styles.authorDates}>
+                  {author.birthDate}
+                  {author.deathDate ? ` – ${author.deathDate}` : ''}
+                </Text>
+              )}
+            </View>
+          </View>
         )}
-        
+
+        {/* Meta Tags */}
         <View style={styles.metaRow}>
           {book.year && (
             <View style={styles.metaTag}>
@@ -108,40 +207,123 @@ function SelectedBookView({ book, onBack }: SelectedBookViewProps) {
             </View>
           )}
         </View>
-        
-        {book.subjects && book.subjects.length > 0 && (
+
+        {/* Description */}
+        {isLoadingDetails && !description && (
+          <View style={styles.descriptionLoading}>
+            <ActivityIndicator size="small" color="#A78BFA" />
+            <Text style={styles.descriptionLoadingText}>Loading details...</Text>
+          </View>
+        )}
+
+        {description && (
+          <View style={styles.descriptionContainer}>
+            <Text style={styles.descriptionLabel}>About this book</Text>
+            <Text style={styles.descriptionText} numberOfLines={8}>
+              {description}
+            </Text>
+          </View>
+        )}
+
+        {/* Author Bio */}
+        {author?.bio && (
+          <View style={styles.authorBioContainer}>
+            <Text style={styles.authorBioLabel}>About the author</Text>
+            <Text style={styles.authorBioText} numberOfLines={5}>
+              {author.bio}
+            </Text>
+          </View>
+        )}
+
+        {/* Subjects */}
+        {fullSubjects && fullSubjects.length > 0 && (
           <View style={styles.subjectsContainer}>
-            {book.subjects.slice(0, 3).map((subject, index) => (
-              <View key={index} style={styles.subjectTag}>
+            {fullSubjects.slice(0, 6).map((subject, index) => (
+              <View key={`subject-${index}`} style={styles.subjectTag}>
                 <Text style={styles.subjectText}>{subject}</Text>
               </View>
             ))}
           </View>
         )}
 
+        {/* Action Button */}
         <TouchableOpacity style={styles.matchMusicButton}>
           <Text style={styles.matchMusicButtonText}>Find Ambient Music</Text>
         </TouchableOpacity>
+
+        <View style={styles.bottomPadding} />
       </View>
-    </View>
+    </ScrollView>
   );
 }
 
+// ============================================================================
+// Main BookSearch Component
+// ============================================================================
+
 export function BookSearch() {
+  const [filtersExpanded, setFiltersExpanded] = useState(false);
+
   const {
     query,
     setQuery,
-    results,
-    isLoading,
-    error,
+    filters,
+    updateFilter,
+    clearFilters,
+    results: searchResults,
+    isLoading: isSearchLoading,
+    error: searchError,
     hasSearched,
     selectedBook,
     selectBook,
     clearSelection,
   } = useBookSearch();
 
+  const {
+    selectedGenre,
+    results: browseResults,
+    isLoading: isBrowseLoading,
+    error: browseError,
+    workCount,
+    browseGenre,
+    clearBrowse,
+  } = useSubjectBrowse();
+
+  const { details, isLoading: isLoadingDetails } = useBookDetailsAuto(selectedBook);
+
+  // Determine which results to show
+  const isSearchMode = query.trim().length > 0 || hasSearched;
+  const isBrowseMode = selectedGenre !== null;
+  const results = isSearchMode ? searchResults : browseResults;
+  const isLoading = isSearchMode ? isSearchLoading : isBrowseLoading;
+  const error = isSearchMode ? searchError : browseError;
+
+  const handleSelectGenre = (genre: Genre) => {
+    setQuery(''); // Clear search when browsing
+    browseGenre(genre);
+  };
+
+  const handleClearGenre = () => {
+    clearBrowse();
+  };
+
+  const handleQueryChange = (text: string) => {
+    if (selectedGenre) {
+      clearBrowse(); // Clear browse when searching
+    }
+    setQuery(text);
+  };
+
+  // Show selected book view
   if (selectedBook) {
-    return <SelectedBookView book={selectedBook} onBack={clearSelection} />;
+    return (
+      <SelectedBookView
+        book={selectedBook}
+        details={details}
+        isLoadingDetails={isLoadingDetails}
+        onBack={clearSelection}
+      />
+    );
   }
 
   return (
@@ -153,18 +335,19 @@ export function BookSearch() {
         </Text>
       </View>
 
+      {/* Search Input */}
       <View style={styles.searchContainer}>
         <TextInput
           style={styles.searchInput}
           placeholder="Search by title or author..."
           placeholderTextColor="#6B7280"
           value={query}
-          onChangeText={setQuery}
+          onChangeText={handleQueryChange}
           autoCorrect={false}
           autoCapitalize="none"
           returnKeyType="search"
         />
-        {isLoading && (
+        {isSearchLoading && (
           <ActivityIndicator
             style={styles.loadingIndicator}
             size="small"
@@ -173,21 +356,59 @@ export function BookSearch() {
         )}
       </View>
 
+      {/* Search Filters */}
+      <SearchFilters
+        filters={filters}
+        onUpdateFilter={updateFilter}
+        onClearFilters={clearFilters}
+        isExpanded={filtersExpanded}
+        onToggleExpand={() => setFiltersExpanded(!filtersExpanded)}
+      />
+
+      {/* Genre Browsing */}
+      {!isSearchMode && (
+        <GenreChips
+          selectedGenre={selectedGenre}
+          onSelectGenre={handleSelectGenre}
+          onClearGenre={handleClearGenre}
+        />
+      )}
+
+      {/* Browse Mode Header */}
+      {isBrowseMode && !isSearchMode && (
+        <View style={styles.browseHeader}>
+          <Text style={styles.browseTitle}>{selectedGenre}</Text>
+          <Text style={styles.browseCount}>
+            {workCount.toLocaleString()} books
+          </Text>
+        </View>
+      )}
+
+      {/* Error State */}
       {error && (
         <View style={styles.errorContainer}>
           <Text style={styles.errorText}>{error}</Text>
         </View>
       )}
 
-      {hasSearched && results.length === 0 && !isLoading && (
+      {/* Empty State */}
+      {(hasSearched || isBrowseMode) && results.length === 0 && !isLoading && (
         <View style={styles.emptyContainer}>
           <Text style={styles.emptyText}>No books found</Text>
           <Text style={styles.emptySubtext}>
-            Try a different search term
+            Try a different search term or genre
           </Text>
         </View>
       )}
 
+      {/* Loading State for Browse */}
+      {isBrowseLoading && !isSearchMode && (
+        <View style={styles.browseLoadingContainer}>
+          <ActivityIndicator size="large" color="#A78BFA" />
+        </View>
+      )}
+
+      {/* Results List */}
       <FlatList
         data={results}
         keyExtractor={(item) => item.id}
@@ -201,6 +422,10 @@ export function BookSearch() {
     </View>
   );
 }
+
+// ============================================================================
+// Styles
+// ============================================================================
 
 const styles = StyleSheet.create({
   container: {
@@ -217,7 +442,6 @@ const styles = StyleSheet.create({
     fontWeight: '300',
     color: '#FAFAFA',
     letterSpacing: -0.5,
-    fontFamily: 'System',
   },
   subtitle: {
     fontSize: 15,
@@ -227,7 +451,7 @@ const styles = StyleSheet.create({
   },
   searchContainer: {
     marginHorizontal: 24,
-    marginBottom: 20,
+    marginBottom: 8,
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#1A1A24',
@@ -299,10 +523,26 @@ const styles = StyleSheet.create({
     color: '#A1A1AA',
     marginTop: 6,
   },
+  bookMeta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 6,
+    gap: 8,
+  },
   bookYear: {
     fontSize: 13,
     color: '#71717A',
-    marginTop: 4,
+  },
+  editionBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    backgroundColor: 'rgba(167, 139, 250, 0.12)',
+    borderRadius: 8,
+  },
+  editionBadgeText: {
+    fontSize: 11,
+    color: '#A78BFA',
+    fontWeight: '500',
   },
   errorContainer: {
     marginHorizontal: 24,
@@ -332,6 +572,77 @@ const styles = StyleSheet.create({
     color: '#52525B',
     marginTop: 8,
   },
+
+  // Genre Section
+  genreSection: {
+    marginBottom: 20,
+  },
+  genreHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 24,
+    marginBottom: 12,
+  },
+  genreSectionTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#A1A1AA',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  clearGenreText: {
+    fontSize: 13,
+    color: '#A78BFA',
+    fontWeight: '500',
+  },
+  genreChipsContainer: {
+    paddingHorizontal: 24,
+    gap: 8,
+  },
+  genreChip: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    backgroundColor: '#1A1A24',
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#27272A',
+    marginRight: 8,
+  },
+  genreChipSelected: {
+    backgroundColor: 'rgba(167, 139, 250, 0.15)',
+    borderColor: '#A78BFA',
+  },
+  genreChipText: {
+    color: '#A1A1AA',
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  genreChipTextSelected: {
+    color: '#A78BFA',
+  },
+
+  // Browse Header
+  browseHeader: {
+    paddingHorizontal: 24,
+    marginBottom: 16,
+  },
+  browseTitle: {
+    fontSize: 22,
+    fontWeight: '600',
+    color: '#FAFAFA',
+    letterSpacing: -0.3,
+  },
+  browseCount: {
+    fontSize: 14,
+    color: '#71717A',
+    marginTop: 4,
+  },
+  browseLoadingContainer: {
+    paddingVertical: 40,
+    alignItems: 'center',
+  },
+
   // Selected book view styles
   selectedContainer: {
     flex: 1,
@@ -348,12 +659,12 @@ const styles = StyleSheet.create({
   },
   selectedContent: {
     alignItems: 'center',
-    paddingHorizontal: 32,
-    paddingTop: 20,
+    paddingHorizontal: 24,
+    paddingTop: 8,
   },
   selectedCoverContainer: {
-    width: SCREEN_WIDTH * 0.5,
-    height: SCREEN_WIDTH * 0.75,
+    width: SCREEN_WIDTH * 0.45,
+    height: SCREEN_WIDTH * 0.68,
     borderRadius: 12,
     overflow: 'hidden',
     backgroundColor: '#27272A',
@@ -372,26 +683,51 @@ const styles = StyleSheet.create({
     height: '100%',
   },
   selectedPlaceholderText: {
-    fontSize: 64,
+    fontSize: 56,
   },
   selectedTitle: {
-    fontSize: 26,
+    fontSize: 24,
     fontWeight: '600',
     color: '#FAFAFA',
     textAlign: 'center',
-    marginTop: 28,
+    marginTop: 24,
     letterSpacing: -0.3,
-    lineHeight: 32,
+    lineHeight: 30,
+  },
+
+  // Author Section
+  authorSection: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 16,
+    paddingHorizontal: 20,
+  },
+  authorPhoto: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    marginRight: 12,
+    backgroundColor: '#27272A',
+  },
+  authorInfo: {
+    flex: 1,
+    alignItems: 'center',
   },
   selectedAuthor: {
-    fontSize: 17,
+    fontSize: 16,
     color: '#A1A1AA',
-    marginTop: 10,
     textAlign: 'center',
   },
+  authorDates: {
+    fontSize: 13,
+    color: '#71717A',
+    marginTop: 2,
+  },
+
+  // Meta Tags
   metaRow: {
     flexDirection: 'row',
-    marginTop: 20,
+    marginTop: 16,
     gap: 12,
   },
   metaTag: {
@@ -407,12 +743,73 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '500',
   },
+
+  // Description
+  descriptionLoading: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 24,
+    gap: 10,
+  },
+  descriptionLoadingText: {
+    color: '#71717A',
+    fontSize: 14,
+  },
+  descriptionContainer: {
+    marginTop: 24,
+    width: '100%',
+    backgroundColor: '#18181F',
+    borderRadius: 16,
+    padding: 18,
+    borderWidth: 1,
+    borderColor: '#27272A',
+  },
+  descriptionLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#71717A',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: 10,
+  },
+  descriptionText: {
+    fontSize: 15,
+    color: '#D4D4D8',
+    lineHeight: 22,
+  },
+
+  // Author Bio
+  authorBioContainer: {
+    marginTop: 16,
+    width: '100%',
+    backgroundColor: '#18181F',
+    borderRadius: 16,
+    padding: 18,
+    borderWidth: 1,
+    borderColor: '#27272A',
+  },
+  authorBioLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#71717A',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: 10,
+  },
+  authorBioText: {
+    fontSize: 15,
+    color: '#D4D4D8',
+    lineHeight: 22,
+  },
+
+  // Subjects
   subjectsContainer: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     justifyContent: 'center',
-    marginTop: 16,
+    marginTop: 20,
     gap: 8,
+    paddingHorizontal: 8,
   },
   subjectTag: {
     paddingHorizontal: 12,
@@ -427,8 +824,10 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '500',
   },
+
+  // Action Button
   matchMusicButton: {
-    marginTop: 40,
+    marginTop: 32,
     paddingHorizontal: 32,
     paddingVertical: 18,
     backgroundColor: '#A78BFA',
@@ -444,5 +843,8 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '700',
     letterSpacing: 0.3,
+  },
+  bottomPadding: {
+    height: 50,
   },
 });
