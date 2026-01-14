@@ -16,6 +16,7 @@ import { useBookSearch } from '../hooks/useBookSearch';
 import { useBookDetailsAuto } from '../hooks/useBookDetails';
 import { useSubjectBrowse } from '../hooks/useSubjectBrowse';
 import { useReadingList } from '../hooks/useReadingList';
+import { useMusic } from '../context/MusicContext';
 import { SearchFilters } from './SearchFilters';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -141,6 +142,9 @@ interface SelectedBookViewProps {
   currentStatus: ReadingStatus | undefined;
   onAddToList: (status: ReadingStatus) => void;
   onRemoveFromList: () => void;
+  onPlayMusic: () => void;
+  isMusicPlaying: boolean;
+  isMusicLoading: boolean;
 }
 
 function SelectedBookView({ 
@@ -152,6 +156,9 @@ function SelectedBookView({
   currentStatus,
   onAddToList,
   onRemoveFromList,
+  onPlayMusic,
+  isMusicPlaying,
+  isMusicLoading,
 }: SelectedBookViewProps) {
   const [showStatusPicker, setShowStatusPicker] = useState(false);
   const author = details?.author;
@@ -262,8 +269,22 @@ function SelectedBookView({
         )}
 
         {/* Action Buttons */}
-        <TouchableOpacity style={styles.matchMusicButton}>
-          <Text style={styles.matchMusicButtonText}>Find Ambient Music</Text>
+        <TouchableOpacity 
+          style={[
+            styles.matchMusicButton,
+            isMusicPlaying && styles.matchMusicButtonActive,
+          ]}
+          onPress={onPlayMusic}
+          disabled={isMusicLoading}
+          activeOpacity={0.8}
+        >
+          {isMusicLoading ? (
+            <ActivityIndicator size="small" color="#0F0F14" />
+          ) : (
+            <Text style={styles.matchMusicButtonText}>
+              {isMusicPlaying ? '🎵 Playing Ambient Music' : '🎶 Play Ambient Music'}
+            </Text>
+          )}
         </TouchableOpacity>
 
         {/* Reading List Button */}
@@ -365,6 +386,8 @@ export function BookSearch() {
   const { details, isLoading: isLoadingDetails } = useBookDetailsAuto(selectedBook);
 
   const { addBook, removeBook, isInList, getItemByBookId } = useReadingList();
+  
+  const { status: musicStatus, currentBook, play: playMusic } = useMusic();
 
   // Determine which results to show
   const isSearchMode = query.trim().length > 0 || hasSearched;
@@ -392,6 +415,9 @@ export function BookSearch() {
   // Show selected book view
   if (selectedBook) {
     const readingListItem = getItemByBookId(selectedBook.id);
+    const isMusicPlaying = currentBook?.id === selectedBook.id && (musicStatus === 'playing' || musicStatus === 'paused');
+    const isMusicLoading = currentBook?.id === selectedBook.id && musicStatus === 'connecting';
+    
     return (
       <SelectedBookView
         book={selectedBook}
@@ -402,6 +428,9 @@ export function BookSearch() {
         currentStatus={readingListItem?.status}
         onAddToList={(status) => addBook(selectedBook, status)}
         onRemoveFromList={() => removeBook(selectedBook.id)}
+        onPlayMusic={() => playMusic(selectedBook)}
+        isMusicPlaying={isMusicPlaying}
+        isMusicLoading={isMusicLoading}
       />
     );
   }
@@ -923,6 +952,11 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '700',
     letterSpacing: 0.3,
+  },
+  matchMusicButtonActive: {
+    backgroundColor: 'rgba(167, 139, 250, 0.25)',
+    borderWidth: 2,
+    borderColor: '#A78BFA',
   },
 
   // Reading List Styles

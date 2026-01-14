@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import { ReadingStatus, ReadingListItem, READING_STATUS_OPTIONS } from '../types/book';
 import { useReadingList } from '../hooks/useReadingList';
+import { useMusic } from '../context/MusicContext';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -76,9 +77,11 @@ interface ReadingListCardProps {
   item: ReadingListItem;
   onChangeStatus: (status: ReadingStatus) => void;
   onRemove: () => void;
+  onPlayMusic: () => void;
+  isPlaying: boolean;
 }
 
-function ReadingListCard({ item, onChangeStatus, onRemove }: ReadingListCardProps) {
+function ReadingListCard({ item, onChangeStatus, onRemove, onPlayMusic, isPlaying }: ReadingListCardProps) {
   const [showActions, setShowActions] = useState(false);
   const { book, status, dateAdded } = item;
   
@@ -121,14 +124,23 @@ function ReadingListCard({ item, onChangeStatus, onRemove }: ReadingListCardProp
         )}
         <Text style={styles.dateAdded}>Added {formattedDate}</Text>
         
-        {!showActions && (
+        <View style={styles.cardActions}>
           <TouchableOpacity 
-            style={styles.actionsToggle}
-            onPress={() => setShowActions(true)}
+            style={[styles.playMusicButton, isPlaying && styles.playMusicButtonActive]}
+            onPress={onPlayMusic}
           >
-            <Text style={styles.actionsToggleText}>•••</Text>
+            <Text style={styles.playMusicIcon}>{isPlaying ? '🎵' : '🎶'}</Text>
           </TouchableOpacity>
-        )}
+          
+          {!showActions && (
+            <TouchableOpacity 
+              style={styles.actionsToggle}
+              onPress={() => setShowActions(true)}
+            >
+              <Text style={styles.actionsToggleText}>•••</Text>
+            </TouchableOpacity>
+          )}
+        </View>
       </View>
 
       {showActions && (
@@ -219,6 +231,7 @@ function EmptyState({ status }: EmptyStateProps) {
 export function ReadingList() {
   const [activeTab, setActiveTab] = useState<ReadingStatus>('reading');
   const { items, isLoading, getBooksByStatus, updateStatus, removeBook } = useReadingList();
+  const { status: musicStatus, currentBook, play: playMusic } = useMusic();
 
   const counts: Record<ReadingStatus, number> = {
     reading: getBooksByStatus('reading').length,
@@ -262,6 +275,8 @@ export function ReadingList() {
               item={item}
               onChangeStatus={(status) => updateStatus(item.book.id, status)}
               onRemove={() => removeBook(item.book.id)}
+              onPlayMusic={() => playMusic(item.book)}
+              isPlaying={currentBook?.id === item.book.id && (musicStatus === 'playing' || musicStatus === 'paused')}
             />
           )}
           contentContainerStyle={styles.listContent}
@@ -418,10 +433,29 @@ const styles = StyleSheet.create({
     color: '#52525B',
     marginTop: 8,
   },
-  actionsToggle: {
+  cardActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
     position: 'absolute',
     top: 0,
     right: 0,
+    gap: 4,
+  },
+  playMusicButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(167, 139, 250, 0.15)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  playMusicButtonActive: {
+    backgroundColor: 'rgba(167, 139, 250, 0.3)',
+  },
+  playMusicIcon: {
+    fontSize: 14,
+  },
+  actionsToggle: {
     padding: 8,
   },
   actionsToggleText: {

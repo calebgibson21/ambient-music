@@ -3,6 +3,8 @@ import { StatusBar } from 'expo-status-bar';
 import { StyleSheet, View, SafeAreaView, Platform, TouchableOpacity, Text } from 'react-native';
 import { BookSearch } from './src/components/BookSearch';
 import { ReadingList } from './src/components/ReadingList';
+import { MusicPlayer } from './src/components/MusicPlayer';
+import { MusicProvider } from './src/context/MusicContext';
 
 type Tab = 'search' | 'list';
 
@@ -10,13 +12,17 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<Tab>('search');
 
   return (
-    <View style={styles.container}>
-      <StatusBar style="light" />
-      <SafeAreaView style={styles.safeArea}>
-        {activeTab === 'search' ? <BookSearch /> : <ReadingList />}
-        
-        {/* Bottom Navigation */}
-        <View style={styles.bottomNav}>
+    <MusicProvider>
+      <View style={styles.container}>
+        <StatusBar style="light" />
+        <SafeAreaView style={styles.safeArea}>
+          {activeTab === 'search' ? <BookSearch /> : <ReadingList />}
+          
+          {/* Floating Music Player */}
+          <MusicPlayer />
+          
+          {/* Bottom Navigation */}
+          <View style={styles.bottomNav}>
           <TouchableOpacity
             style={[styles.navTab, activeTab === 'search' && styles.navTabActive]}
             onPress={() => setActiveTab('search')}
@@ -43,8 +49,9 @@ export default function App() {
             </Text>
           </TouchableOpacity>
         </View>
-      </SafeAreaView>
-    </View>
+        </SafeAreaView>
+      </View>
+    </MusicProvider>
   );
 }
 
