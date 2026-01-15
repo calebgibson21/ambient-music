@@ -8,6 +8,8 @@ import {
   StyleSheet,
   ActivityIndicator,
   Dimensions,
+  Modal,
+  Pressable,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { ReadingStatus, ReadingListItem, READING_STATUS_OPTIONS } from '../types/book';
@@ -148,10 +150,19 @@ function ReadingListCard({ item, onChangeStatus, onRemove, onPlayMusic, isPlayin
         </View>
       </View>
 
-      {showActions && (
-        <View style={styles.actionsOverlay}>
-          <View style={styles.actionsContainer}>
-            <Text style={styles.actionsTitle}>Change Status</Text>
+      <Modal
+        visible={showActions}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowActions(false)}
+      >
+        <Pressable 
+          style={styles.modalBackdrop} 
+          onPress={() => setShowActions(false)}
+        >
+          <Pressable style={styles.actionsMenu} onPress={(e) => e.stopPropagation()}>
+            <Text style={styles.actionsTitle}>{book.title}</Text>
+            <Text style={styles.actionsSubtitle}>Change Status</Text>
             {READING_STATUS_OPTIONS.map((option) => (
               <TouchableOpacity
                 key={option.value}
@@ -164,12 +175,24 @@ function ReadingListCard({ item, onChangeStatus, onRemove, onPlayMusic, isPlayin
                   setShowActions(false);
                 }}
               >
+                <Ionicons 
+                  name={
+                    option.value === 'reading' ? 'book' : 
+                    option.value === 'want_to_read' ? 'bookmark' : 'checkmark-circle'
+                  } 
+                  size={18} 
+                  color={status === option.value ? '#A78BFA' : '#71717A'} 
+                  style={styles.actionIcon}
+                />
                 <Text style={[
                   styles.actionOptionText,
                   status === option.value && styles.actionOptionTextActive,
                 ]}>
                   {option.label}
                 </Text>
+                {status === option.value && (
+                  <Ionicons name="checkmark" size={18} color="#A78BFA" />
+                )}
               </TouchableOpacity>
             ))}
             <View style={styles.actionsDivider} />
@@ -180,6 +203,7 @@ function ReadingListCard({ item, onChangeStatus, onRemove, onPlayMusic, isPlayin
                 setShowActions(false);
               }}
             >
+              <Ionicons name="trash-outline" size={18} color="#EF4444" style={styles.actionIcon} />
               <Text style={styles.removeActionText}>Remove from List</Text>
             </TouchableOpacity>
             <TouchableOpacity
@@ -188,9 +212,9 @@ function ReadingListCard({ item, onChangeStatus, onRemove, onPlayMusic, isPlayin
             >
               <Text style={styles.cancelActionText}>Cancel</Text>
             </TouchableOpacity>
-          </View>
-        </View>
-      )}
+          </Pressable>
+        </Pressable>
+      </Modal>
     </TouchableOpacity>
   );
 }
@@ -390,8 +414,6 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     borderWidth: 1,
     borderColor: '#27272A',
-    position: 'relative',
-    overflow: 'hidden',
   },
   coverContainer: {
     width: 72,
@@ -461,42 +483,58 @@ const styles = StyleSheet.create({
     padding: 8,
   },
 
-  // Actions Overlay
-  actionsOverlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(15, 15, 20, 0.95)',
-    borderRadius: 16,
-    padding: 12,
+  // Actions Modal
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
     justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
   },
-  actionsContainer: {
-    gap: 4,
+  actionsMenu: {
+    backgroundColor: '#1A1A24',
+    borderRadius: 20,
+    padding: 20,
+    width: '100%',
+    maxWidth: 340,
+    borderWidth: 1,
+    borderColor: '#27272A',
   },
   actionsTitle: {
+    fontSize: 17,
+    fontWeight: '600',
+    color: '#FAFAFA',
+    textAlign: 'center',
+    marginBottom: 4,
+    numberOfLines: 2,
+  },
+  actionsSubtitle: {
     fontSize: 12,
     fontWeight: '600',
     color: '#71717A',
     textTransform: 'uppercase',
     letterSpacing: 0.5,
-    marginBottom: 8,
-    textAlign: 'center',
+    marginBottom: 12,
+    marginTop: 12,
   },
   actionOption: {
-    paddingVertical: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 14,
     paddingHorizontal: 16,
-    borderRadius: 8,
+    borderRadius: 12,
+    marginBottom: 4,
   },
   actionOptionActive: {
-    backgroundColor: 'rgba(167, 139, 250, 0.15)',
+    backgroundColor: 'rgba(167, 139, 250, 0.12)',
+  },
+  actionIcon: {
+    marginRight: 12,
   },
   actionOptionText: {
-    fontSize: 14,
+    flex: 1,
+    fontSize: 16,
     color: '#A1A1AA',
-    textAlign: 'center',
   },
   actionOptionTextActive: {
     color: '#A78BFA',
@@ -505,28 +543,32 @@ const styles = StyleSheet.create({
   actionsDivider: {
     height: 1,
     backgroundColor: '#27272A',
-    marginVertical: 8,
+    marginVertical: 12,
   },
   removeAction: {
-    paddingVertical: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 14,
     paddingHorizontal: 16,
-    borderRadius: 8,
+    borderRadius: 12,
   },
   removeActionText: {
-    fontSize: 14,
+    flex: 1,
+    fontSize: 16,
     color: '#EF4444',
-    textAlign: 'center',
   },
   cancelAction: {
-    paddingVertical: 10,
+    paddingVertical: 14,
     paddingHorizontal: 16,
-    borderRadius: 8,
-    marginTop: 4,
+    borderRadius: 12,
+    marginTop: 8,
+    backgroundColor: '#27272A',
   },
   cancelActionText: {
-    fontSize: 14,
-    color: '#71717A',
+    fontSize: 16,
+    color: '#A1A1AA',
     textAlign: 'center',
+    fontWeight: '500',
   },
 
   // Empty State
