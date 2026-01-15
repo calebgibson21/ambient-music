@@ -162,6 +162,8 @@ function SelectedBookView({
   isMusicLoading,
 }: SelectedBookViewProps) {
   const [showStatusPicker, setShowStatusPicker] = useState(false);
+  const [isDescriptionExpanded, setIsDescriptionExpanded] = useState(false);
+  const [isAuthorBioExpanded, setIsAuthorBioExpanded] = useState(false);
   const author = details?.author;
   const description = details?.description;
   const fullSubjects = details?.fullSubjects || book.subjects;
@@ -192,71 +194,6 @@ function SelectedBookView({
 
         {/* Title */}
         <Text style={styles.selectedTitle}>{book.title}</Text>
-
-        {/* Author Section (Enhanced) */}
-        {(book.authors.length > 0 || author) && (
-          <View style={styles.authorSection}>
-            {author?.photoUrl && (
-              <Image
-                source={{ uri: author.photoUrl }}
-                style={styles.authorPhoto}
-                resizeMode="cover"
-              />
-            )}
-            <View style={styles.authorInfo}>
-              <Text style={styles.selectedAuthor}>
-                by {author?.name || book.authors.join(', ')}
-              </Text>
-              {author?.birthDate && (
-                <Text style={styles.authorDates}>
-                  {author.birthDate}
-                  {author.deathDate ? ` – ${author.deathDate}` : ''}
-                </Text>
-              )}
-            </View>
-          </View>
-        )}
-
-        {/* Meta Tags */}
-        <View style={styles.metaRow}>
-          {book.year && (
-            <View style={styles.metaTag}>
-              <Text style={styles.metaTagText}>{book.year}</Text>
-            </View>
-          )}
-          {book.pageCount && (
-            <View style={styles.metaTag}>
-              <Text style={styles.metaTagText}>{book.pageCount} pages</Text>
-            </View>
-          )}
-        </View>
-
-        {/* Description */}
-        {isLoadingDetails && !description && (
-          <View style={styles.descriptionLoading}>
-            <ActivityIndicator size="small" color="#A78BFA" />
-            <Text style={styles.descriptionLoadingText}>Loading details...</Text>
-          </View>
-        )}
-
-        {description && (
-          <View style={styles.descriptionContainer}>
-            <Text style={styles.descriptionLabel}>About this book</Text>
-            <Text style={styles.descriptionText} numberOfLines={8}>
-              {description}
-            </Text>
-          </View>
-        )}
-
-        {/* Author Bio */}
-        {author?.bio && (
-          <View style={styles.authorBioContainer}>
-            <Text style={styles.authorBioLabel}>About the author</Text>
-            <Text style={styles.authorBioText} numberOfLines={5}>
-              {author.bio}
-            </Text>
-          </View>
-        )}
 
         {/* Subjects */}
         {fullSubjects && fullSubjects.length > 0 && (
@@ -350,6 +287,95 @@ function SelectedBookView({
                 </Text>
               </TouchableOpacity>
             ))}
+          </View>
+        )}
+
+        {/* Author Section */}
+        {(book.authors.length > 0 || author) && (
+          <View style={styles.authorSection}>
+            {author?.photoUrl && (
+              <Image
+                source={{ uri: author.photoUrl }}
+                style={styles.authorPhoto}
+                resizeMode="cover"
+              />
+            )}
+            <View style={styles.authorInfo}>
+              <Text style={styles.selectedAuthor}>
+                by {author?.name || book.authors.join(', ')}
+              </Text>
+              {author?.birthDate && (
+                <Text style={styles.authorDates}>
+                  {author.birthDate}
+                  {author.deathDate ? ` – ${author.deathDate}` : ''}
+                </Text>
+              )}
+            </View>
+          </View>
+        )}
+
+        {/* Meta Tags */}
+        <View style={styles.metaRow}>
+          {book.year && (
+            <View style={styles.metaTag}>
+              <Text style={styles.metaTagText}>{book.year}</Text>
+            </View>
+          )}
+          {book.pageCount && (
+            <View style={styles.metaTag}>
+              <Text style={styles.metaTagText}>{book.pageCount} pages</Text>
+            </View>
+          )}
+        </View>
+
+        {/* Description */}
+        {isLoadingDetails && !description && (
+          <View style={styles.descriptionLoading}>
+            <ActivityIndicator size="small" color="#A78BFA" />
+            <Text style={styles.descriptionLoadingText}>Loading details...</Text>
+          </View>
+        )}
+
+        {description && (
+          <View style={styles.descriptionContainer}>
+            <Text style={styles.descriptionLabel}>About this book</Text>
+            <Text 
+              style={styles.descriptionText} 
+              numberOfLines={isDescriptionExpanded ? undefined : 3}
+            >
+              {description}
+            </Text>
+            <TouchableOpacity
+              onPress={() => setIsDescriptionExpanded(!isDescriptionExpanded)}
+              style={styles.expandButton}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.expandButtonText}>
+                {isDescriptionExpanded ? 'Show less' : 'Show more'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {/* Author Bio */}
+        {author?.bio && (
+          <View style={styles.authorBioContainer}>
+            <Text style={styles.authorBioLabel}>About the author</Text>
+            <Text 
+              style={styles.authorBioText} 
+              numberOfLines={isAuthorBioExpanded ? undefined : 3}
+            >
+              {author.bio}
+            </Text>
+            <TouchableOpacity
+              onPress={() => setIsAuthorBioExpanded(!isAuthorBioExpanded)}
+              style={styles.expandButton}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.expandButtonText}>
+                {isAuthorBioExpanded ? 'Show less' : 'Show more'}
+              </Text>
+            </TouchableOpacity>
           </View>
         )}
 
@@ -816,7 +842,7 @@ const styles = StyleSheet.create({
   authorSection: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 16,
+    marginTop: 28,
     paddingHorizontal: 20,
   },
   authorPhoto: {
@@ -893,6 +919,15 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: '#D4D4D8',
     lineHeight: 22,
+  },
+  expandButton: {
+    marginTop: 10,
+    paddingVertical: 4,
+  },
+  expandButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#A78BFA',
   },
 
   // Author Bio

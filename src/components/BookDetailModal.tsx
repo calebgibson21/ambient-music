@@ -136,6 +136,20 @@ export function BookDetailModal({ book, visible, onClose }: BookDetailModalProps
               </View>
             )}
 
+            {/* Subjects/Genres */}
+            {(details?.fullSubjects || book.subjects) && (
+              <View style={styles.subjectsSection}>
+                <Text style={styles.sectionTitle}>Subjects</Text>
+                <View style={styles.subjectsContainer}>
+                  {(details?.fullSubjects || book.subjects)?.slice(0, 8).map((subject, index) => (
+                    <View key={index} style={styles.subjectTag}>
+                      <Text style={styles.subjectText}>{subject}</Text>
+                    </View>
+                  ))}
+                </View>
+              </View>
+            )}
+
             {/* Description */}
             {details?.description && (
               <View style={styles.descriptionSection}>
@@ -155,20 +169,6 @@ export function BookDetailModal({ book, visible, onClose }: BookDetailModalProps
                     {isDescriptionExpanded ? 'Show less' : 'Show more'}
                   </Text>
                 </TouchableOpacity>
-              </View>
-            )}
-
-            {/* Subjects/Genres */}
-            {(details?.fullSubjects || book.subjects) && (
-              <View style={styles.subjectsSection}>
-                <Text style={styles.sectionTitle}>Subjects</Text>
-                <View style={styles.subjectsContainer}>
-                  {(details?.fullSubjects || book.subjects)?.slice(0, 8).map((subject, index) => (
-                    <View key={index} style={styles.subjectTag}>
-                      <Text style={styles.subjectText}>{subject}</Text>
-                    </View>
-                  ))}
-                </View>
               </View>
             )}
 
