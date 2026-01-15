@@ -289,6 +289,7 @@ export function MusicPlayer() {
   const expandedHeight = expandAnim.interpolate({
     inputRange: [0, 1],
     outputRange: [0, 120],
+    extrapolate: 'clamp',
   });
 
   return (
