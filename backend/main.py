@@ -10,6 +10,8 @@ import base64
 import os
 import uuid
 from contextlib import asynccontextmanager
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from typing import Optional
 
 import socketio
@@ -18,6 +20,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
+from logging_config import log_info, log_warning, log_error, log_debug
 from lyria_client import LyriaConfig, LyriaSession, LyriaSessionManager
 from prompt_generator import generate_music_prompts, get_recommended_bpm
 
@@ -29,11 +32,33 @@ if not GEMINI_API_KEY:
     raise RuntimeError("GEMINI_API_KEY environment variable is required")
 
 
+# Session metrics dataclass for observability
+@dataclass
+class SessionMetrics:
+    """Metrics for tracking session health and performance."""
+    session_id: str
+    start_time: datetime
+    book_title: str
+    chunks_sent: int = 0
+    bytes_sent: int = 0
+    chunks_received: int = 0
+    bytes_received: int = 0
+    chunks_dropped: int = 0
+    max_queue_depth: int = 0
+    connected_clients: int = 0
+
+
+# Application start time for uptime tracking
+app_start_time: Optional[datetime] = None
+
 # Global session manager
 session_manager: Optional[LyriaSessionManager] = None
 
 # Audio queues for each session (to buffer chunks for Socket.IO clients)
 audio_queues: dict[str, asyncio.Queue] = {}
+
+# Session metrics for observability
+session_metrics: dict[str, SessionMetrics] = {}
 
 # Create Socket.IO server with ASGI mode
 sio = socketio.AsyncServer(
@@ -50,10 +75,13 @@ socket_sessions: dict[str, str] = {}
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan handler."""
-    global session_manager
+    global session_manager, app_start_time
+    app_start_time = datetime.now(timezone.utc)
     session_manager = LyriaSessionManager(GEMINI_API_KEY)
+    log_info("server_started", api_key_configured=True)
     yield
     # Cleanup on shutdown
+    log_info("server_stopping", active_sessions=len(session_metrics))
     await session_manager.close_all()
 
 
@@ -110,37 +138,48 @@ async def broadcast_audio_to_room(session_id: str) -> None:
     Background task that reads from the audio queue and 
     broadcasts to all clients in the Socket.IO room.
     """
-    print(f"Broadcast task started for session {session_id}")
+    log_info("broadcast_task_started", session_id=session_id)
     queue = audio_queues.get(session_id)
+    metrics = session_metrics.get(session_id)
     if not queue:
-        print("No queue found!")
+        log_warning("broadcast_no_queue", session_id=session_id)
         return
     
     room_name = f"session_{session_id}"
-    chunk_count = 0
-    total_bytes = 0
     
     while True:
         try:
-            print(f"Waiting for audio from queue (size: {queue.qsize()})...")
+            queue_size = queue.qsize()
+            log_debug("broadcast_waiting", session_id=session_id, queue_size=queue_size)
+            
+            # Track max queue depth
+            if metrics and queue_size > metrics.max_queue_depth:
+                metrics.max_queue_depth = queue_size
+            
             audio_data = await asyncio.wait_for(queue.get(), timeout=1.0)
-            print(f"Got audio chunk from queue: {len(audio_data)} bytes")
+            chunk_size = len(audio_data)
+            log_debug("broadcast_chunk_received", session_id=session_id, chunk_size=chunk_size)
             
             # Encode audio as base64 for transmission
-            print("Encoding to base64...")
             encoded = base64.b64encode(audio_data).decode('utf-8')
-            print(f"Encoded size: {len(encoded)} chars, emitting to room {room_name}...")
             
             # Emit to all clients in the session room
             await sio.emit("audio_chunk", {"data": encoded}, room=room_name)
-            print("Emit complete")
             
-            chunk_count += 1
-            total_bytes += len(audio_data)
+            # Update metrics
+            if metrics:
+                metrics.chunks_sent += 1
+                metrics.bytes_sent += chunk_size
             
             # Log every 50 chunks (~1 second of audio at typical chunk rates)
-            if chunk_count % 50 == 0:
-                print(f"Audio streaming: {chunk_count} chunks sent ({total_bytes / 1024:.1f} KB)")
+            if metrics and metrics.chunks_sent % 50 == 0:
+                log_info(
+                    "audio_streaming_progress",
+                    session_id=session_id,
+                    chunks_sent=metrics.chunks_sent,
+                    bytes_sent=metrics.bytes_sent,
+                    kb_sent=round(metrics.bytes_sent / 1024, 1),
+                )
             
             queue.task_done()
         except asyncio.TimeoutError:
@@ -150,10 +189,18 @@ async def broadcast_audio_to_room(session_id: str) -> None:
         except asyncio.CancelledError:
             break
         except Exception as e:
-            print(f"Broadcast error: {e}")
+            log_error("broadcast_error", session_id=session_id, error=str(e))
             break
     
-    print(f"Audio broadcast ended: {chunk_count} total chunks ({total_bytes / 1024:.1f} KB)")
+    if metrics:
+        log_info(
+            "broadcast_ended",
+            session_id=session_id,
+            total_chunks=metrics.chunks_sent,
+            total_kb=round(metrics.bytes_sent / 1024, 1),
+        )
+    else:
+        log_info("broadcast_ended", session_id=session_id)
 
 
 # Stored prompts per session for status endpoint
@@ -167,18 +214,24 @@ broadcast_tasks: dict[str, asyncio.Task] = {}
 @sio.event
 async def connect(sid, environ):
     """Handle client connection."""
-    print(f"Client connected: {sid}")
+    log_info("socket_client_connected", socket_id=sid)
 
 
 @sio.event
 async def disconnect(sid):
     """Handle client disconnection."""
-    print(f"Client disconnected: {sid}")
     # Clean up session mapping
     session_id = socket_sessions.pop(sid, None)
     if session_id:
         room_name = f"session_{session_id}"
         await sio.leave_room(sid, room_name)
+        # Update metrics
+        metrics = session_metrics.get(session_id)
+        if metrics and metrics.connected_clients > 0:
+            metrics.connected_clients -= 1
+        log_info("socket_client_disconnected", socket_id=sid, session_id=session_id)
+    else:
+        log_info("socket_client_disconnected", socket_id=sid)
 
 
 @sio.event
@@ -189,15 +242,16 @@ async def join_session(sid, data):
     Expected data: {"session_id": "uuid"}
     """
     session_id = data.get("session_id")
-    print(f"Client {sid} requesting to join session: {session_id}")
+    log_info("socket_join_request", socket_id=sid, session_id=session_id)
     
     if not session_manager:
+        log_warning("socket_join_failed", socket_id=sid, reason="service_not_initialized")
         await sio.emit("error", {"message": "Service not initialized"}, to=sid)
         return
     
     session = session_manager.get_session(session_id)
     if not session:
-        print(f"Session {session_id} not found")
+        log_warning("socket_join_failed", socket_id=sid, session_id=session_id, reason="session_not_found")
         await sio.emit("error", {"message": "Session not found"}, to=sid)
         return
     
@@ -205,7 +259,13 @@ async def join_session(sid, data):
     room_name = f"session_{session_id}"
     await sio.enter_room(sid, room_name)
     socket_sessions[sid] = session_id
-    print(f"Client {sid} joined room {room_name}")
+    
+    # Update metrics
+    metrics = session_metrics.get(session_id)
+    if metrics:
+        metrics.connected_clients += 1
+    
+    log_info("socket_client_joined", socket_id=sid, session_id=session_id, room=room_name)
     
     # Send initial status
     await sio.emit("session_joined", {
@@ -225,6 +285,11 @@ async def leave_session(sid, data):
         room_name = f"session_{session_id}"
         await sio.leave_room(sid, room_name)
         socket_sessions.pop(sid, None)
+        # Update metrics
+        metrics = session_metrics.get(session_id)
+        if metrics and metrics.connected_clients > 0:
+            metrics.connected_clients -= 1
+        log_info("socket_client_left", socket_id=sid, session_id=session_id)
 
 
 @sio.event
@@ -233,15 +298,18 @@ async def pause(sid, data):
     session_id = data.get("session_id")
     
     if not session_manager:
+        log_warning("socket_pause_failed", socket_id=sid, reason="service_not_initialized")
         await sio.emit("error", {"message": "Service not initialized"}, to=sid)
         return
     
     session = session_manager.get_session(session_id)
     if not session:
+        log_warning("socket_pause_failed", socket_id=sid, session_id=session_id, reason="session_not_found")
         await sio.emit("error", {"message": "Session not found"}, to=sid)
         return
     
     await session.pause()
+    log_info("session_paused", session_id=session_id, socket_id=sid)
     
     # Notify all clients in the room
     room_name = f"session_{session_id}"
@@ -254,15 +322,18 @@ async def resume(sid, data):
     session_id = data.get("session_id")
     
     if not session_manager:
+        log_warning("socket_resume_failed", socket_id=sid, reason="service_not_initialized")
         await sio.emit("error", {"message": "Service not initialized"}, to=sid)
         return
     
     session = session_manager.get_session(session_id)
     if not session:
+        log_warning("socket_resume_failed", socket_id=sid, session_id=session_id, reason="session_not_found")
         await sio.emit("error", {"message": "Session not found"}, to=sid)
         return
     
     await session.resume()
+    log_info("session_resumed", session_id=session_id, socket_id=sid)
     
     # Notify all clients in the room
     room_name = f"session_{session_id}"
@@ -282,6 +353,7 @@ async def start_music(request: StartMusicRequest):
         raise HTTPException(status_code=503, detail="Service not initialized")
     
     book = request.book
+    log_info("session_start_requested", book_title=book.title)
     
     # Generate music prompts from book metadata
     prompts, mood_config = generate_music_prompts(
@@ -309,12 +381,18 @@ async def start_music(request: StartMusicRequest):
         session = await session_manager.create_session(session_id)
         await session.configure(prompts, config)
     except Exception as e:
-        import traceback
-        traceback.print_exc()
+        log_error("session_create_failed", session_id=session_id, error=str(e))
         raise HTTPException(status_code=500, detail=f"Failed to create session: {str(e)}")
     
     # Create audio queue for this session
     audio_queues[session_id] = asyncio.Queue(maxsize=100)
+    
+    # Initialize session metrics
+    session_metrics[session_id] = SessionMetrics(
+        session_id=session_id,
+        start_time=datetime.now(timezone.utc),
+        book_title=book.title,
+    )
     
     # Store prompts for status endpoint
     prompt_list = [{"text": p.text, "weight": p.weight} for p in prompts]
@@ -322,20 +400,35 @@ async def start_music(request: StartMusicRequest):
     
     # Start streaming with callback to queue audio
     def on_audio_chunk(data: bytes):
+        metrics = session_metrics.get(session_id)
         try:
-            print(f"Queueing audio chunk: {len(data)} bytes")
+            chunk_size = len(data)
             audio_queues[session_id].put_nowait(data)
-            print(f"Chunk queued, queue size: {audio_queues[session_id].qsize()}")
+            # Track received chunks from Lyria
+            if metrics:
+                metrics.chunks_received += 1
+                metrics.bytes_received += chunk_size
+            log_debug("audio_chunk_queued", session_id=session_id, chunk_size=chunk_size, queue_size=audio_queues[session_id].qsize())
         except asyncio.QueueFull:
-            print("Queue full, dropping chunk")
+            if metrics:
+                metrics.chunks_dropped += 1
+            log_warning("audio_chunk_dropped", session_id=session_id, reason="queue_full", chunks_dropped=metrics.chunks_dropped if metrics else 1)
         except Exception as e:
-            print(f"Error queueing chunk: {e}")
+            log_error("audio_chunk_queue_error", session_id=session_id, error=str(e))
     
     await session.start_streaming(on_audio_chunk)
     
     # Start broadcast task
     broadcast_tasks[session_id] = asyncio.create_task(
         broadcast_audio_to_room(session_id)
+    )
+    
+    log_info(
+        "session_started",
+        session_id=session_id,
+        book_title=book.title,
+        bpm=bpm,
+        prompts=[p.text for p in prompts],
     )
     
     return StartMusicResponse(
@@ -354,6 +447,18 @@ async def stop_music(session_id: str):
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
     
+    # Get final metrics before cleanup
+    metrics = session_metrics.get(session_id)
+    if metrics:
+        log_info(
+            "session_stopping",
+            session_id=session_id,
+            chunks_sent=metrics.chunks_sent,
+            bytes_sent=metrics.bytes_sent,
+            chunks_dropped=metrics.chunks_dropped,
+            duration_seconds=round((datetime.now(timezone.utc) - metrics.start_time).total_seconds(), 1),
+        )
+    
     # Cancel broadcast task
     task = broadcast_tasks.pop(session_id, None)
     if task:
@@ -370,12 +475,15 @@ async def stop_music(session_id: str):
     # Close all sockets in the room
     await sio.close_room(room_name)
     
-    # Clean up queues and prompts
+    # Clean up queues, prompts, and metrics
     audio_queues.pop(session_id, None)
     session_prompts.pop(session_id, None)
+    session_metrics.pop(session_id, None)
     
     # Close session
     await session_manager.close_session(session_id)
+    
+    log_info("session_stopped", session_id=session_id)
     
     return {"status": "stopped", "session_id": session_id}
 
@@ -391,6 +499,7 @@ async def pause_music(session_id: str):
         raise HTTPException(status_code=404, detail="Session not found")
     
     await session.pause()
+    log_info("session_paused_rest", session_id=session_id)
     
     # Notify all clients in the room
     room_name = f"session_{session_id}"
@@ -410,6 +519,7 @@ async def resume_music(session_id: str):
         raise HTTPException(status_code=404, detail="Session not found")
     
     await session.resume()
+    log_info("session_resumed_rest", session_id=session_id)
     
     # Notify all clients in the room
     room_name = f"session_{session_id}"
@@ -439,6 +549,59 @@ async def get_session_status(session_id: str):
 async def health_check():
     """Health check endpoint."""
     return {"status": "healthy", "api_key_configured": bool(GEMINI_API_KEY)}
+
+
+@fastapi_app.get("/metrics")
+async def get_metrics():
+    """
+    Get system and session metrics for observability.
+    
+    Returns global stats and per-session metrics including:
+    - Uptime
+    - Active session count
+    - Total bytes streamed
+    - Per-session: chunks sent/dropped, queue depth, connected clients
+    """
+    now = datetime.now(timezone.utc)
+    uptime_seconds = (now - app_start_time).total_seconds() if app_start_time else 0
+    
+    # Calculate totals across all sessions
+    total_bytes_sent = sum(m.bytes_sent for m in session_metrics.values())
+    total_chunks_sent = sum(m.chunks_sent for m in session_metrics.values())
+    total_chunks_dropped = sum(m.chunks_dropped for m in session_metrics.values())
+    
+    # Build per-session metrics
+    sessions_data = {}
+    for sid, metrics in session_metrics.items():
+        queue = audio_queues.get(sid)
+        sessions_data[sid] = {
+            "book_title": metrics.book_title,
+            "start_time": metrics.start_time.isoformat(),
+            "duration_seconds": round((now - metrics.start_time).total_seconds(), 1),
+            "chunks_received": metrics.chunks_received,
+            "bytes_received": metrics.bytes_received,
+            "chunks_sent": metrics.chunks_sent,
+            "bytes_sent": metrics.bytes_sent,
+            "chunks_dropped": metrics.chunks_dropped,
+            "drop_rate_percent": round(
+                (metrics.chunks_dropped / metrics.chunks_received * 100) 
+                if metrics.chunks_received > 0 else 0, 2
+            ),
+            "queue_depth": queue.qsize() if queue else 0,
+            "max_queue_depth": metrics.max_queue_depth,
+            "connected_clients": metrics.connected_clients,
+        }
+    
+    return {
+        "timestamp": now.isoformat(),
+        "uptime_seconds": round(uptime_seconds, 1),
+        "active_sessions": len(session_metrics),
+        "total_bytes_sent": total_bytes_sent,
+        "total_kb_sent": round(total_bytes_sent / 1024, 1),
+        "total_chunks_sent": total_chunks_sent,
+        "total_chunks_dropped": total_chunks_dropped,
+        "sessions": sessions_data,
+    }
 
 
 if __name__ == "__main__":

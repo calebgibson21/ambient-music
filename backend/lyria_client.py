@@ -3,12 +3,12 @@ Lyria RealTime client wrapper for managing music generation sessions.
 """
 
 import asyncio
-import traceback
 from dataclasses import dataclass
 from typing import Callable, Optional
 from google import genai
 from google.genai import types
 
+from logging_config import log_info, log_warning, log_error, log_debug
 from prompt_generator import WeightedPrompt
 
 
@@ -53,17 +53,16 @@ class LyriaSession:
     async def connect(self) -> None:
         """Establish connection to Lyria RealTime API."""
         try:
-            print("Connecting to Lyria RealTime API...")
+            log_info("lyria_connecting", model="lyria-realtime-exp")
             # Get the async context manager
             self._context_manager = self._client.aio.live.music.connect(
                 model='models/lyria-realtime-exp'
             )
             # Enter the context manager to get the session
             self._session = await self._context_manager.__aenter__()
-            print("Connected to Lyria RealTime API successfully")
+            log_info("lyria_connected")
         except Exception as e:
-            print(f"Error connecting to Lyria: {e}")
-            traceback.print_exc()
+            log_error("lyria_connect_failed", error=str(e))
             raise
     
     async def configure(
@@ -84,11 +83,11 @@ class LyriaSession:
                 types.WeightedPrompt(text=p.text, weight=p.weight)
                 for p in prompts
             ]
-            print(f"Setting prompts: {[p.text for p in prompts]}")
+            log_info("lyria_setting_prompts", prompts=[p.text for p in prompts])
             await self._session.set_weighted_prompts(prompts=lyria_prompts)
             
             # Set generation config (audio_format and sample_rate_hz are fixed by the API)
-            print(f"Setting config: bpm={config.bpm}, brightness={config.brightness}, density={config.density}")
+            log_info("lyria_setting_config", bpm=config.bpm, brightness=config.brightness, density=config.density)
             await self._session.set_music_generation_config(
                 config=types.LiveMusicGenerationConfig(
                     bpm=config.bpm,
@@ -98,10 +97,9 @@ class LyriaSession:
                     guidance=config.guidance,
                 )
             )
-            print("Configuration complete")
+            log_info("lyria_configured")
         except Exception as e:
-            print(f"Error configuring session: {e}")
-            traceback.print_exc()
+            log_error("lyria_configure_failed", error=str(e))
             raise
     
     async def start_streaming(
@@ -122,15 +120,14 @@ class LyriaSession:
         
         try:
             # Start playback
-            print("Starting playback...")
+            log_info("lyria_starting_playback")
             await self._session.play()
-            print("Playback started")
+            log_info("lyria_playback_started")
             
             # Start receiving audio in background
             self._audio_task = asyncio.create_task(self._receive_audio_loop())
         except Exception as e:
-            print(f"Error starting streaming: {e}")
-            traceback.print_exc()
+            log_error("lyria_start_streaming_failed", error=str(e))
             raise
     
     async def _receive_audio_loop(self) -> None:
@@ -138,8 +135,9 @@ class LyriaSession:
         if not self._session:
             return
         
-        print("Starting audio receive loop...")
+        log_info("lyria_receive_loop_started")
         chunk_count = 0
+        total_bytes = 0
         try:
             async for message in self._session.receive():
                 if not self._is_playing:
@@ -149,17 +147,17 @@ class LyriaSession:
                     for chunk in message.server_content.audio_chunks:
                         if self._on_audio_chunk and chunk.data:
                             chunk_count += 1
+                            total_bytes += len(chunk.data)
                             if chunk_count % 50 == 1:
-                                print(f"Received audio chunk #{chunk_count}, size: {len(chunk.data)} bytes")
+                                log_debug("lyria_chunk_received", chunk_number=chunk_count, chunk_size=len(chunk.data))
                             self._on_audio_chunk(chunk.data)
                 
                 # Small yield to prevent blocking
                 await asyncio.sleep(0)
         except asyncio.CancelledError:
-            print(f"Audio receive loop cancelled after {chunk_count} chunks")
+            log_info("lyria_receive_loop_cancelled", chunks_received=chunk_count, total_bytes=total_bytes)
         except Exception as e:
-            print(f"Error receiving audio: {e}")
-            traceback.print_exc()
+            log_error("lyria_receive_error", error=str(e), chunks_received=chunk_count)
     
     async def update_prompts(self, prompts: list[WeightedPrompt]) -> None:
         """Update the music prompts while streaming."""
@@ -199,8 +197,9 @@ class LyriaSession:
         if self._session:
             try:
                 await self._session.stop()
+                log_info("lyria_session_stopped")
             except Exception as e:
-                print(f"Error stopping session: {e}")
+                log_error("lyria_stop_error", error=str(e))
     
     async def close(self) -> None:
         """Close the session and release resources."""
@@ -210,8 +209,9 @@ class LyriaSession:
         if self._context_manager:
             try:
                 await self._context_manager.__aexit__(None, None, None)
+                log_info("lyria_session_closed")
             except Exception as e:
-                print(f"Error closing context manager: {e}")
+                log_error("lyria_close_error", error=str(e))
             self._context_manager = None
         
         self._session = None

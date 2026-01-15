@@ -1,5 +1,5 @@
 import React, { createContext, useContext, ReactNode } from 'react';
-import { useAmbientMusic, MusicStatus } from '../hooks/useAmbientMusic';
+import { useAmbientMusic, MusicStatus, BufferMetrics } from '../hooks/useAmbientMusic';
 import { Book } from '../types/book';
 
 interface MusicContextValue {
@@ -7,6 +7,7 @@ interface MusicContextValue {
   currentBook: Book | null;
   prompts: Array<{ text: string; weight: number }>;
   error: string | null;
+  metrics: BufferMetrics;
   play: (book: Book) => Promise<void>;
   pause: () => Promise<void>;
   resume: () => Promise<void>;
