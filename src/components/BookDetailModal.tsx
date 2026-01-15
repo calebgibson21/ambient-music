@@ -10,6 +10,7 @@ import {
   Dimensions,
   ActivityIndicator,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { Book, BookDetails } from '../types/book';
 import { useBookDetailsAuto } from '../hooks/useBookDetails';
 import { useMusic } from '../context/MusicContext';
@@ -63,7 +64,7 @@ export function BookDetailModal({ book, visible, onClose }: BookDetailModalProps
         {/* Header with close button */}
         <View style={styles.header}>
           <TouchableOpacity style={styles.closeButton} onPress={onClose}>
-            <Text style={styles.closeButtonText}>✕</Text>
+            <Ionicons name="close" size={20} color="#A1A1AA" />
           </TouchableOpacity>
         </View>
 
@@ -115,9 +116,11 @@ export function BookDetailModal({ book, visible, onClose }: BookDetailModalProps
                 <ActivityIndicator size="small" color="#A78BFA" />
               ) : (
                 <>
-                  <Text style={styles.playMusicIcon}>
-                    {isCurrentlyPlaying ? '🎵' : '🎶'}
-                  </Text>
+                  <Ionicons
+                    name={isCurrentlyPlaying ? 'musical-notes' : 'musical-note'}
+                    size={20}
+                    color="#A78BFA"
+                  />
                   <Text style={styles.playMusicText}>
                     {isCurrentlyPlaying ? 'Playing Ambient Music' : 'Play Ambient Music'}
                   </Text>
@@ -235,10 +238,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  closeButtonText: {
-    fontSize: 16,
-    color: '#A1A1AA',
-  },
   scrollView: {
     flex: 1,
   },
@@ -310,9 +309,6 @@ const styles = StyleSheet.create({
   },
   playMusicButtonActive: {
     backgroundColor: 'rgba(167, 139, 250, 0.25)',
-  },
-  playMusicIcon: {
-    fontSize: 20,
   },
   playMusicText: {
     fontSize: 16,

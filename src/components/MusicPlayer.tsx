@@ -8,6 +8,7 @@ import {
   Dimensions,
   Image,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { useMusic } from '../context/MusicContext';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -175,22 +176,27 @@ export function MusicPlayer() {
             onPress={handlePlayPause}
             disabled={isLoading}
           >
-            <Text style={styles.controlIcon}>
-              {isLoading ? '⏳' : isPlaying ? '⏸' : '▶️'}
-            </Text>
+            <Ionicons
+              name={isLoading ? 'hourglass-outline' : isPlaying ? 'pause' : 'play'}
+              size={18}
+              color="#A78BFA"
+            />
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.controlButton}
             onPress={stop}
           >
-            <Text style={styles.controlIcon}>⏹</Text>
+            <Ionicons name="stop" size={18} color="#A78BFA" />
           </TouchableOpacity>
         </View>
 
         {/* Expand indicator */}
-        <Text style={styles.expandIcon}>
-          {isExpanded ? '▼' : '▲'}
-        </Text>
+        <Ionicons
+          name={isExpanded ? 'chevron-down' : 'chevron-up'}
+          size={14}
+          color="#52525B"
+          style={styles.expandIcon}
+        />
       </TouchableOpacity>
 
       {/* Expanded content */}
@@ -303,12 +309,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  controlIcon: {
-    fontSize: 18,
-  },
   expandIcon: {
-    fontSize: 10,
-    color: '#52525B',
     marginLeft: 4,
   },
   expandedContent: {

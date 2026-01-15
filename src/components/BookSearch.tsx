@@ -11,6 +11,7 @@ import {
   Dimensions,
   ScrollView,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { Book, BookDetails, Genre, POPULAR_GENRES, ReadingStatus, READING_STATUS_OPTIONS } from '../types/book';
 import { useBookSearch } from '../hooks/useBookSearch';
 import { useBookDetailsAuto } from '../hooks/useBookDetails';
@@ -281,9 +282,16 @@ function SelectedBookView({
           {isMusicLoading ? (
             <ActivityIndicator size="small" color="#0F0F14" />
           ) : (
-            <Text style={styles.matchMusicButtonText}>
-              {isMusicPlaying ? '🎵 Playing Ambient Music' : '🎶 Play Ambient Music'}
-            </Text>
+            <View style={styles.matchMusicButtonContent}>
+              <Ionicons
+                name={isMusicPlaying ? 'musical-notes' : 'musical-note'}
+                size={16}
+                color="#0F0F14"
+              />
+              <Text style={styles.matchMusicButtonText}>
+                {isMusicPlaying ? 'Playing Ambient Music' : 'Play Ambient Music'}
+              </Text>
+            </View>
           )}
         </TouchableOpacity>
 
@@ -946,6 +954,11 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.3,
     shadowRadius: 12,
     elevation: 8,
+  },
+  matchMusicButtonContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
   matchMusicButtonText: {
     color: '#0F0F14',

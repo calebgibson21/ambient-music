@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { StyleSheet, View, SafeAreaView, Platform, TouchableOpacity, Text } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { BookSearch } from './src/components/BookSearch';
 import { ReadingList } from './src/components/ReadingList';
 import { MusicPlayer } from './src/components/MusicPlayer';
@@ -28,9 +29,11 @@ export default function App() {
             onPress={() => setActiveTab('search')}
             activeOpacity={0.7}
           >
-            <Text style={[styles.navIcon, activeTab === 'search' && styles.navIconActive]}>
-              🔍
-            </Text>
+            <Ionicons
+              name={activeTab === 'search' ? 'search' : 'search-outline'}
+              size={22}
+              color={activeTab === 'search' ? '#A78BFA' : '#71717A'}
+            />
             <Text style={[styles.navLabel, activeTab === 'search' && styles.navLabelActive]}>
               Search
             </Text>
@@ -41,9 +44,11 @@ export default function App() {
             onPress={() => setActiveTab('list')}
             activeOpacity={0.7}
           >
-            <Text style={[styles.navIcon, activeTab === 'list' && styles.navIconActive]}>
-              📚
-            </Text>
+            <Ionicons
+              name={activeTab === 'list' ? 'library' : 'library-outline'}
+              size={22}
+              color={activeTab === 'list' ? '#A78BFA' : '#71717A'}
+            />
             <Text style={[styles.navLabel, activeTab === 'list' && styles.navLabelActive]}>
               My List
             </Text>
@@ -81,15 +86,8 @@ const styles = StyleSheet.create({
   navTabActive: {
     backgroundColor: 'rgba(167, 139, 250, 0.1)',
   },
-  navIcon: {
-    fontSize: 20,
-    marginBottom: 4,
-    opacity: 0.5,
-  },
-  navIconActive: {
-    opacity: 1,
-  },
   navLabel: {
+    marginTop: 4,
     fontSize: 12,
     fontWeight: '500',
     color: '#71717A',

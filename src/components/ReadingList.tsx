@@ -9,6 +9,7 @@ import {
   ActivityIndicator,
   Dimensions,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { ReadingStatus, ReadingListItem, READING_STATUS_OPTIONS } from '../types/book';
 import { useReadingList } from '../hooks/useReadingList';
 import { useMusic } from '../context/MusicContext';
@@ -129,7 +130,11 @@ function ReadingListCard({ item, onChangeStatus, onRemove, onPlayMusic, isPlayin
             style={[styles.playMusicButton, isPlaying && styles.playMusicButtonActive]}
             onPress={onPlayMusic}
           >
-            <Text style={styles.playMusicIcon}>{isPlaying ? '🎵' : '🎶'}</Text>
+            <Ionicons
+              name={isPlaying ? 'musical-notes' : 'musical-note'}
+              size={14}
+              color="#A78BFA"
+            />
           </TouchableOpacity>
           
           {!showActions && (
@@ -137,7 +142,7 @@ function ReadingListCard({ item, onChangeStatus, onRemove, onPlayMusic, isPlayin
               style={styles.actionsToggle}
               onPress={() => setShowActions(true)}
             >
-              <Text style={styles.actionsToggleText}>•••</Text>
+              <Ionicons name="ellipsis-horizontal" size={18} color="#52525B" />
             </TouchableOpacity>
           )}
         </View>
@@ -452,16 +457,8 @@ const styles = StyleSheet.create({
   playMusicButtonActive: {
     backgroundColor: 'rgba(167, 139, 250, 0.3)',
   },
-  playMusicIcon: {
-    fontSize: 14,
-  },
   actionsToggle: {
     padding: 8,
-  },
-  actionsToggleText: {
-    color: '#52525B',
-    fontSize: 16,
-    letterSpacing: 2,
   },
 
   // Actions Overlay

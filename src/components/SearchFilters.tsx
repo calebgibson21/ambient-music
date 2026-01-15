@@ -9,6 +9,7 @@ import {
   Modal,
   Pressable,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { SearchFilters as SearchFiltersType, LANGUAGE_OPTIONS, SORT_OPTIONS, SortOption } from '../types/book';
 
 interface SearchFiltersProps {
@@ -47,9 +48,16 @@ export function SearchFilters({
         onPress={onToggleExpand}
         activeOpacity={0.7}
       >
-        <Text style={styles.toggleButtonText}>
-          {isExpanded ? '▲ Hide Filters' : '▼ Show Filters'}
-        </Text>
+        <View style={styles.toggleButtonContent}>
+          <Ionicons
+            name={isExpanded ? 'chevron-up' : 'chevron-down'}
+            size={14}
+            color="#A1A1AA"
+          />
+          <Text style={styles.toggleButtonText}>
+            {isExpanded ? 'Hide Filters' : 'Show Filters'}
+          </Text>
+        </View>
         {hasActiveFilters && !isExpanded && (
           <View style={styles.activeBadge}>
             <Text style={styles.activeBadgeText}>Active</Text>
@@ -234,6 +242,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 10,
+  },
+  toggleButtonContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
   },
   toggleButtonText: {
     color: '#71717A',
