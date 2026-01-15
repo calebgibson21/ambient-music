@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import {
   View,
   Text,
@@ -10,15 +10,14 @@ import {
   ActivityIndicator,
   Dimensions,
   ScrollView,
+  Keyboard,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { Book, BookDetails, Genre, POPULAR_GENRES, ReadingStatus, READING_STATUS_OPTIONS } from '../types/book';
+import { Book, BookDetails, ReadingStatus, READING_STATUS_OPTIONS } from '../types/book';
 import { useBookSearch } from '../hooks/useBookSearch';
 import { useBookDetailsAuto } from '../hooks/useBookDetails';
-import { useSubjectBrowse } from '../hooks/useSubjectBrowse';
 import { useReadingList } from '../hooks/useReadingList';
 import { useMusic } from '../context/MusicContext';
-import { SearchFilters } from './SearchFilters';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -79,56 +78,6 @@ function BookCard({ book, onPress }: BookCardProps) {
   );
 }
 
-// ============================================================================
-// Genre Chips Component
-// ============================================================================
-
-interface GenreChipsProps {
-  selectedGenre: Genre | null;
-  onSelectGenre: (genre: Genre) => void;
-  onClearGenre: () => void;
-}
-
-function GenreChips({ selectedGenre, onSelectGenre, onClearGenre }: GenreChipsProps) {
-  return (
-    <View style={styles.genreSection}>
-      <View style={styles.genreHeader}>
-        <Text style={styles.genreSectionTitle}>Browse by Genre</Text>
-        {selectedGenre && (
-          <TouchableOpacity onPress={onClearGenre}>
-            <Text style={styles.clearGenreText}>Clear</Text>
-          </TouchableOpacity>
-        )}
-      </View>
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.genreChipsContainer}
-      >
-        {POPULAR_GENRES.map((genre) => (
-          <TouchableOpacity
-            key={genre}
-            style={[
-              styles.genreChip,
-              selectedGenre === genre && styles.genreChipSelected,
-            ]}
-            onPress={() => onSelectGenre(genre)}
-            activeOpacity={0.7}
-          >
-            <Text
-              style={[
-                styles.genreChipText,
-                selectedGenre === genre && styles.genreChipTextSelected,
-              ]}
-            >
-              {genre}
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </ScrollView>
-    </View>
-  );
-}
 
 // ============================================================================
 // Selected Book View Component (Enhanced with details)
@@ -171,7 +120,8 @@ function SelectedBookView({
   return (
     <ScrollView style={styles.selectedContainer} showsVerticalScrollIndicator={false}>
       <TouchableOpacity onPress={onBack} style={styles.backButton}>
-        <Text style={styles.backButtonText}>← Back to search</Text>
+        <Ionicons name="arrow-back" size={20} color="#A78BFA" />
+        <Text style={styles.backButtonText}>Back</Text>
       </TouchableOpacity>
 
       <View style={styles.selectedContent}>
@@ -390,32 +340,19 @@ function SelectedBookView({
 // ============================================================================
 
 export function BookSearch() {
-  const [filtersExpanded, setFiltersExpanded] = useState(false);
+  const searchInputRef = useRef<TextInput>(null);
 
   const {
     query,
     setQuery,
-    filters,
-    updateFilter,
-    clearFilters,
-    results: searchResults,
-    isLoading: isSearchLoading,
-    error: searchError,
+    results,
+    isLoading,
+    error,
     hasSearched,
     selectedBook,
     selectBook,
     clearSelection,
   } = useBookSearch();
-
-  const {
-    selectedGenre,
-    results: browseResults,
-    isLoading: isBrowseLoading,
-    error: browseError,
-    workCount,
-    browseGenre,
-    clearBrowse,
-  } = useSubjectBrowse();
 
   const { details, isLoading: isLoadingDetails } = useBookDetailsAuto(selectedBook);
 
@@ -423,27 +360,9 @@ export function BookSearch() {
   
   const { status: musicStatus, currentBook, play: playMusic } = useMusic();
 
-  // Determine which results to show
-  const isSearchMode = query.trim().length > 0 || hasSearched;
-  const isBrowseMode = selectedGenre !== null;
-  const results = isSearchMode ? searchResults : browseResults;
-  const isLoading = isSearchMode ? isSearchLoading : isBrowseLoading;
-  const error = isSearchMode ? searchError : browseError;
-
-  const handleSelectGenre = (genre: Genre) => {
-    setQuery(''); // Clear search when browsing
-    browseGenre(genre);
-  };
-
-  const handleClearGenre = () => {
-    clearBrowse();
-  };
-
-  const handleQueryChange = (text: string) => {
-    if (selectedGenre) {
-      clearBrowse(); // Clear browse when searching
-    }
-    setQuery(text);
+  const handleClearSearch = () => {
+    setQuery('');
+    searchInputRef.current?.focus();
   };
 
   // Show selected book view
@@ -469,60 +388,51 @@ export function BookSearch() {
     );
   }
 
+  const showEmptyState = !hasSearched && query.trim().length === 0;
+  const showNoResults = hasSearched && results.length === 0 && !isLoading;
+
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.title}>Find a Book</Text>
-        <Text style={styles.subtitle}>
-          Search for a book to match with ambient music
-        </Text>
-      </View>
-
-      {/* Search Input */}
-      <View style={styles.searchContainer}>
-        <TextInput
-          style={styles.searchInput}
-          placeholder="Search by title or author..."
-          placeholderTextColor="#6B7280"
-          value={query}
-          onChangeText={handleQueryChange}
-          autoCorrect={false}
-          autoCapitalize="none"
-          returnKeyType="search"
-        />
-        {isSearchLoading && (
-          <ActivityIndicator
-            style={styles.loadingIndicator}
-            size="small"
-            color="#A78BFA"
+      {/* Search Bar - Hero Element */}
+      <View style={styles.searchSection}>
+        <View style={styles.searchBar}>
+          <Ionicons name="search" size={20} color="#71717A" style={styles.searchIcon} />
+          <TextInput
+            ref={searchInputRef}
+            style={styles.searchInput}
+            placeholder="Search for a book..."
+            placeholderTextColor="#52525B"
+            value={query}
+            onChangeText={setQuery}
+            autoCorrect={false}
+            autoCapitalize="none"
+            returnKeyType="search"
+            onSubmitEditing={() => Keyboard.dismiss()}
           />
-        )}
+          {query.length > 0 && (
+            <TouchableOpacity onPress={handleClearSearch} style={styles.clearButton}>
+              <Ionicons name="close-circle" size={20} color="#71717A" />
+            </TouchableOpacity>
+          )}
+          {isLoading && (
+            <ActivityIndicator
+              style={styles.loadingIndicator}
+              size="small"
+              color="#A78BFA"
+            />
+          )}
+        </View>
       </View>
 
-      {/* Search Filters */}
-      <SearchFilters
-        filters={filters}
-        onUpdateFilter={updateFilter}
-        onClearFilters={clearFilters}
-        isExpanded={filtersExpanded}
-        onToggleExpand={() => setFiltersExpanded(!filtersExpanded)}
-      />
-
-      {/* Genre Browsing */}
-      {!isSearchMode && (
-        <GenreChips
-          selectedGenre={selectedGenre}
-          onSelectGenre={handleSelectGenre}
-          onClearGenre={handleClearGenre}
-        />
-      )}
-
-      {/* Browse Mode Header */}
-      {isBrowseMode && !isSearchMode && (
-        <View style={styles.browseHeader}>
-          <Text style={styles.browseTitle}>{selectedGenre}</Text>
-          <Text style={styles.browseCount}>
-            {workCount.toLocaleString()} books
+      {/* Empty State - Before Search */}
+      {showEmptyState && (
+        <View style={styles.emptyStateContainer}>
+          <View style={styles.emptyStateIconContainer}>
+            <Ionicons name="book-outline" size={48} color="#3F3F46" />
+          </View>
+          <Text style={styles.emptyStateTitle}>Find your book</Text>
+          <Text style={styles.emptyStateSubtitle}>
+            Search by title or author to generate{'\n'}ambient music for your reading session
           </Text>
         </View>
       )}
@@ -534,34 +444,30 @@ export function BookSearch() {
         </View>
       )}
 
-      {/* Empty State */}
-      {(hasSearched || isBrowseMode) && results.length === 0 && !isLoading && (
-        <View style={styles.emptyContainer}>
-          <Text style={styles.emptyText}>No books found</Text>
-          <Text style={styles.emptySubtext}>
-            Try a different search term or genre
+      {/* No Results State */}
+      {showNoResults && (
+        <View style={styles.noResultsContainer}>
+          <Ionicons name="search-outline" size={32} color="#52525B" />
+          <Text style={styles.noResultsText}>No books found</Text>
+          <Text style={styles.noResultsSubtext}>
+            Try a different title or author name
           </Text>
         </View>
       )}
 
-      {/* Loading State for Browse */}
-      {isBrowseLoading && !isSearchMode && (
-        <View style={styles.browseLoadingContainer}>
-          <ActivityIndicator size="large" color="#A78BFA" />
-        </View>
-      )}
-
       {/* Results List */}
-      <FlatList
-        data={results}
-        keyExtractor={(item) => item.id}
-        renderItem={({ item }) => (
-          <BookCard book={item} onPress={() => selectBook(item)} />
-        )}
-        contentContainerStyle={styles.listContent}
-        showsVerticalScrollIndicator={false}
-        keyboardShouldPersistTaps="handled"
-      />
+      {results.length > 0 && (
+        <FlatList
+          data={results}
+          keyExtractor={(item) => item.id}
+          renderItem={({ item }) => (
+            <BookCard book={item} onPress={() => selectBook(item)} />
+          )}
+          contentContainerStyle={styles.listContent}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        />
+      )}
     </View>
   );
 }
@@ -575,52 +481,117 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#0F0F14',
   },
-  header: {
-    paddingHorizontal: 24,
-    paddingTop: 16,
-    paddingBottom: 20,
+  
+  // Search Section - Hero
+  searchSection: {
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 16,
   },
-  title: {
-    fontSize: 32,
-    fontWeight: '300',
-    color: '#FAFAFA',
-    letterSpacing: -0.5,
-  },
-  subtitle: {
-    fontSize: 15,
-    color: '#71717A',
-    marginTop: 6,
-    letterSpacing: 0.2,
-  },
-  searchContainer: {
-    marginHorizontal: 24,
-    marginBottom: 8,
+  searchBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#1A1A24',
-    borderRadius: 16,
+    backgroundColor: '#18181F',
+    borderRadius: 14,
     borderWidth: 1,
     borderColor: '#27272A',
+    paddingHorizontal: 16,
+  },
+  searchIcon: {
+    marginRight: 12,
   },
   searchInput: {
     flex: 1,
-    height: 56,
-    paddingHorizontal: 20,
+    height: 52,
     fontSize: 16,
     color: '#FAFAFA',
-    letterSpacing: 0.3,
+    letterSpacing: 0.2,
+  },
+  clearButton: {
+    padding: 4,
+    marginLeft: 8,
   },
   loadingIndicator: {
-    marginRight: 16,
+    marginLeft: 8,
   },
+
+  // Empty State
+  emptyStateContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 40,
+    paddingBottom: 80,
+  },
+  emptyStateIconContainer: {
+    width: 96,
+    height: 96,
+    borderRadius: 48,
+    backgroundColor: '#18181F',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 24,
+    borderWidth: 1,
+    borderColor: '#27272A',
+  },
+  emptyStateTitle: {
+    fontSize: 22,
+    fontWeight: '600',
+    color: '#FAFAFA',
+    marginBottom: 12,
+    letterSpacing: -0.3,
+  },
+  emptyStateSubtitle: {
+    fontSize: 15,
+    color: '#71717A',
+    textAlign: 'center',
+    lineHeight: 22,
+  },
+
+  // Error State
+  errorContainer: {
+    marginHorizontal: 20,
+    padding: 16,
+    backgroundColor: '#2D1F1F',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#4A2828',
+    marginBottom: 16,
+  },
+  errorText: {
+    color: '#F87171',
+    fontSize: 14,
+    textAlign: 'center',
+  },
+
+  // No Results State
+  noResultsContainer: {
+    alignItems: 'center',
+    paddingVertical: 60,
+    paddingHorizontal: 40,
+  },
+  noResultsText: {
+    fontSize: 18,
+    color: '#71717A',
+    fontWeight: '500',
+    marginTop: 16,
+  },
+  noResultsSubtext: {
+    fontSize: 14,
+    color: '#52525B',
+    marginTop: 8,
+    textAlign: 'center',
+  },
+
+  // Results List
   listContent: {
-    paddingHorizontal: 24,
+    paddingHorizontal: 20,
     paddingBottom: 40,
   },
   bookCard: {
     flexDirection: 'row',
     backgroundColor: '#18181F',
-    borderRadius: 16,
+    borderRadius: 14,
     padding: 14,
     marginBottom: 12,
     borderWidth: 1,
@@ -687,104 +658,6 @@ const styles = StyleSheet.create({
     color: '#A78BFA',
     fontWeight: '500',
   },
-  errorContainer: {
-    marginHorizontal: 24,
-    padding: 16,
-    backgroundColor: '#2D1F1F',
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#4A2828',
-    marginBottom: 16,
-  },
-  errorText: {
-    color: '#F87171',
-    fontSize: 14,
-    textAlign: 'center',
-  },
-  emptyContainer: {
-    alignItems: 'center',
-    paddingVertical: 60,
-  },
-  emptyText: {
-    fontSize: 18,
-    color: '#71717A',
-    fontWeight: '500',
-  },
-  emptySubtext: {
-    fontSize: 14,
-    color: '#52525B',
-    marginTop: 8,
-  },
-
-  // Genre Section
-  genreSection: {
-    marginBottom: 20,
-  },
-  genreHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 24,
-    marginBottom: 12,
-  },
-  genreSectionTitle: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#A1A1AA',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  clearGenreText: {
-    fontSize: 13,
-    color: '#A78BFA',
-    fontWeight: '500',
-  },
-  genreChipsContainer: {
-    paddingHorizontal: 24,
-    gap: 8,
-  },
-  genreChip: {
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    backgroundColor: '#1A1A24',
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: '#27272A',
-    marginRight: 8,
-  },
-  genreChipSelected: {
-    backgroundColor: 'rgba(167, 139, 250, 0.15)',
-    borderColor: '#A78BFA',
-  },
-  genreChipText: {
-    color: '#A1A1AA',
-    fontSize: 14,
-    fontWeight: '500',
-  },
-  genreChipTextSelected: {
-    color: '#A78BFA',
-  },
-
-  // Browse Header
-  browseHeader: {
-    paddingHorizontal: 24,
-    marginBottom: 16,
-  },
-  browseTitle: {
-    fontSize: 22,
-    fontWeight: '600',
-    color: '#FAFAFA',
-    letterSpacing: -0.3,
-  },
-  browseCount: {
-    fontSize: 14,
-    color: '#71717A',
-    marginTop: 4,
-  },
-  browseLoadingContainer: {
-    paddingVertical: 40,
-    alignItems: 'center',
-  },
 
   // Selected book view styles
   selectedContainer: {
@@ -792,8 +665,11 @@ const styles = StyleSheet.create({
     backgroundColor: '#0F0F14',
   },
   backButton: {
-    paddingHorizontal: 24,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 20,
     paddingVertical: 16,
+    gap: 6,
   },
   backButtonText: {
     color: '#A78BFA',
@@ -802,7 +678,7 @@ const styles = StyleSheet.create({
   },
   selectedContent: {
     alignItems: 'center',
-    paddingHorizontal: 24,
+    paddingHorizontal: 20,
     paddingTop: 8,
   },
   selectedCoverContainer: {
