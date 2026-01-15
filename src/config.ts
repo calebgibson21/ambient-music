@@ -19,12 +19,8 @@ const getApiHost = (): string => {
 
 export const API_BASE_URL = `http://${getApiHost()}:8000`;
 
-// WebSocket URL derived from API base
-export const getWebSocketUrl = (path: string): string => {
-  const wsProtocol = API_BASE_URL.startsWith('https') ? 'wss' : 'ws';
-  const baseWithoutProtocol = API_BASE_URL.replace(/^https?:\/\//, '');
-  return `${wsProtocol}://${baseWithoutProtocol}${path}`;
-};
+// Socket.IO URL (uses the same base URL - Socket.IO handles transport)
+export const SOCKET_IO_URL = API_BASE_URL;
 
 // Audio configuration
 export const AUDIO_CONFIG = {

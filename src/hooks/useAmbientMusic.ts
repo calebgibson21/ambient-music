@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { Audio, AVPlaybackStatus } from 'expo-av';
+import { io, Socket } from 'socket.io-client';
 import { Book } from '../types/book';
-import { API_BASE_URL, getWebSocketUrl, AUDIO_CONFIG } from '../config';
+import { API_BASE_URL, SOCKET_IO_URL, AUDIO_CONFIG } from '../config';
 
 // Types for music session state
 export type MusicStatus = 'idle' | 'connecting' | 'playing' | 'paused' | 'error';
@@ -32,7 +33,7 @@ interface UseAmbientMusicResult {
 /**
  * Hook for managing ambient music playback via the Lyria backend.
  * 
- * Handles WebSocket connection for streaming audio and expo-av for playback.
+ * Handles Socket.IO connection for streaming audio and expo-av for playback.
  */
 export function useAmbientMusic(): UseAmbientMusicResult {
   const [state, setState] = useState<MusicState>({
@@ -42,7 +43,7 @@ export function useAmbientMusic(): UseAmbientMusicResult {
     error: null,
   });
 
-  const wsRef = useRef<WebSocket | null>(null);
+  const socketRef = useRef<Socket | null>(null);
   const soundQueueRef = useRef<Audio.Sound[]>([]);
   const currentSoundRef = useRef<Audio.Sound | null>(null);
   const audioBufferRef = useRef<Uint8Array[]>([]);
@@ -73,10 +74,10 @@ export function useAmbientMusic(): UseAmbientMusicResult {
   }, []);
 
   const cleanup = useCallback(async () => {
-    // Close WebSocket
-    if (wsRef.current) {
-      wsRef.current.close();
-      wsRef.current = null;
+    // Disconnect Socket.IO
+    if (socketRef.current) {
+      socketRef.current.disconnect();
+      socketRef.current = null;
     }
 
     // Unload all sounds in queue
@@ -196,6 +197,7 @@ export function useAmbientMusic(): UseAmbientMusicResult {
 
   // Process audio buffer and create sound
   const processAudioBuffer = useCallback(async () => {
+    console.log('processAudioBuffer called, isPlaying:', isPlayingRef.current, 'bufferLength:', audioBufferRef.current.length, 'processing:', processingRef.current);
     if (!isPlayingRef.current || audioBufferRef.current.length === 0 || processingRef.current) {
       return;
     }
@@ -206,6 +208,7 @@ export function useAmbientMusic(): UseAmbientMusicResult {
       // Take chunks from buffer
       const chunks = audioBufferRef.current.splice(0, audioBufferRef.current.length);
       const totalLength = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
+      console.log('Processing', chunks.length, 'chunks, total:', totalLength, 'bytes');
       
       if (totalLength === 0) {
         processingRef.current = false;
@@ -224,10 +227,12 @@ export function useAmbientMusic(): UseAmbientMusicResult {
       const wavData = new Uint8Array(wavHeader.length + combined.length);
       wavData.set(wavHeader, 0);
       wavData.set(combined, wavHeader.length);
+      console.log('Created WAV data:', wavData.length, 'bytes');
 
       // Convert to base64 using custom encoder (no stack overflow)
       const base64Audio = uint8ArrayToBase64(wavData);
       const uri = `data:audio/wav;base64,${base64Audio}`;
+      console.log('Creating sound from', base64Audio.length, 'char base64 string');
 
       // Create sound object
       const { sound } = await Audio.Sound.createAsync(
@@ -244,12 +249,15 @@ export function useAmbientMusic(): UseAmbientMusicResult {
           }
         }
       );
+      console.log('Sound created successfully');
 
       // Add to queue
       soundQueueRef.current.push(sound);
+      console.log('Sound added to queue, queue size:', soundQueueRef.current.length);
 
       // Start playing if nothing is currently playing
       if (!currentSoundRef.current && isPlayingRef.current) {
+        console.log('Starting playback...');
         playNextInQueue();
       }
     } catch (error) {
@@ -258,6 +266,39 @@ export function useAmbientMusic(): UseAmbientMusicResult {
       processingRef.current = false;
     }
   }, [playNextInQueue]);
+
+  // Handle incoming audio chunk from Socket.IO
+  const handleAudioChunk = useCallback((data: { data: string }) => {
+    console.log('Received audio_chunk event, data length:', data.data?.length ?? 0);
+    if (!data.data) return;
+    
+    // Buffer audio chunk
+    const audioData = base64ToUint8Array(data.data);
+    console.log('Decoded audio chunk:', audioData.length, 'bytes');
+    if (audioData.length > 0) {
+      audioBufferRef.current.push(audioData);
+
+      // Process buffer when we have enough data (~0.5 second of audio)
+      // At 48kHz stereo 16-bit, 0.5 second = 96000 bytes
+      const totalBuffered = audioBufferRef.current.reduce(
+        (sum, chunk) => sum + chunk.length,
+        0
+      );
+      console.log('Total buffered:', totalBuffered, 'bytes');
+      if (totalBuffered >= 96000 && !processingRef.current) {
+        console.log('Processing audio buffer...');
+        processAudioBuffer();
+      }
+    }
+  }, [processAudioBuffer]);
+
+  // Handle status updates from Socket.IO
+  const handleStatus = useCallback((data: { is_playing: boolean }) => {
+    setState(prev => ({
+      ...prev,
+      status: data.is_playing ? 'playing' : 'paused',
+    }));
+  }, []);
 
   // Start music for a book
   const play = useCallback(async (book: Book) => {
@@ -272,6 +313,71 @@ export function useAmbientMusic(): UseAmbientMusicResult {
     });
 
     try {
+      // Connect to Socket.IO server
+      const socket = io(SOCKET_IO_URL, {
+        transports: ['websocket', 'polling'],
+        reconnection: true,
+        reconnectionAttempts: 5,
+        reconnectionDelay: 1000,
+      });
+      socketRef.current = socket;
+
+      // Set up Socket.IO event listeners
+      socket.on('connect', () => {
+        console.log('Socket.IO connected');
+      });
+
+      socket.on('connect_error', (error: Error) => {
+        console.error('Socket.IO connection error:', error);
+        setState(prev => ({
+          ...prev,
+          status: 'error',
+          error: 'Connection error',
+        }));
+      });
+
+      socket.on('disconnect', (reason: string) => {
+        console.log('Socket.IO disconnected:', reason);
+        isPlayingRef.current = false;
+      });
+
+      socket.on('audio_chunk', handleAudioChunk);
+      socket.on('status', handleStatus);
+
+      socket.on('error', (data: { message: string }) => {
+        console.error('Socket.IO error:', data.message);
+        setState(prev => ({
+          ...prev,
+          status: 'error',
+          error: data.message,
+        }));
+      });
+
+      socket.on('session_stopped', () => {
+        isPlayingRef.current = false;
+        setState(prev => ({
+          ...prev,
+          status: 'idle',
+        }));
+      });
+
+      // Wait for Socket.IO to connect
+      await new Promise<void>((resolve, reject) => {
+        const timeout = setTimeout(() => {
+          reject(new Error('Socket.IO connection timeout'));
+        }, 10000);
+
+        socket.once('connect', () => {
+          clearTimeout(timeout);
+          resolve();
+        });
+
+        socket.once('connect_error', (error: Error) => {
+          clearTimeout(timeout);
+          reject(error);
+        });
+      });
+
       // Start session via REST API
       const response = await fetch(`${API_BASE_URL}/music/start`, {
         method: 'POST',
@@ -293,65 +399,33 @@ export function useAmbientMusic(): UseAmbientMusicResult {
       }
 
       const data = await response.json();
-      const { session_id, websocket_url, prompts } = data;
+      const { session_id, prompts } = data;
 
-      // Connect WebSocket for audio streaming
-      const wsUrl = getWebSocketUrl(websocket_url);
-      const ws = new WebSocket(wsUrl);
-      wsRef.current = ws;
+      // Join the session room via Socket.IO
+      socket.emit('join_session', { session_id });
 
-      ws.onopen = () => {
-        isPlayingRef.current = true;
-        setState(prev => ({
-          ...prev,
-          status: 'playing',
-          session: { sessionId: session_id, prompts },
-        }));
-      };
+      // Wait for session_joined confirmation
+      await new Promise<void>((resolve, reject) => {
+        const timeout = setTimeout(() => {
+          reject(new Error('Failed to join session'));
+        }, 5000);
 
-      ws.onmessage = (event) => {
-        try {
-          const message = JSON.parse(event.data);
-          
-          if (message.type === 'audio' && message.data) {
-            // Buffer audio chunk
-            const audioData = base64ToUint8Array(message.data);
-            if (audioData.length > 0) {
-              audioBufferRef.current.push(audioData);
+        socket.once('session_joined', () => {
+          clearTimeout(timeout);
+          isPlayingRef.current = true;
+          setState(prev => ({
+            ...prev,
+            status: 'playing',
+            session: { sessionId: session_id, prompts },
+          }));
+          resolve();
+        });
 
-              // Process buffer when we have enough data (~0.5 second of audio)
-              // At 48kHz stereo 16-bit, 0.5 second = 96000 bytes
-              const totalBuffered = audioBufferRef.current.reduce(
-                (sum, chunk) => sum + chunk.length,
-                0
-              );
-              if (totalBuffered >= 96000 && !processingRef.current) {
-                processAudioBuffer();
-              }
-            }
-          } else if (message.type === 'status') {
-            setState(prev => ({
-              ...prev,
-              status: message.is_playing ? 'playing' : 'paused',
-            }));
-          }
-        } catch (error) {
-          console.error('Error parsing WebSocket message:', error);
-        }
-      };
-
-      ws.onerror = (error) => {
-        console.error('WebSocket error:', error);
-        setState(prev => ({
-          ...prev,
-          status: 'error',
-          error: 'Connection error',
-        }));
-      };
-
-      ws.onclose = () => {
-        isPlayingRef.current = false;
-      };
+        socket.once('error', (data: { message: string }) => {
+          clearTimeout(timeout);
+          reject(new Error(data.message));
+        });
+      });
     } catch (error) {
       console.error('Error starting music:', error);
       setState(prev => ({
@@ -360,17 +434,30 @@ export function useAmbientMusic(): UseAmbientMusicResult {
         error: error instanceof Error ? error.message : 'Unknown error',
       }));
     }
-  }, [cleanup, processAudioBuffer]);
+  }, [cleanup, handleAudioChunk, handleStatus]);
 
   // Pause music
   const pause = useCallback(async () => {
-    if (!state.session || !wsRef.current) return;
+    if (!state.session || !socketRef.current) return;
 
     try {
       // Send pause command via REST API
-      await fetch(`${API_BASE_URL}/music/pause/${state.session.sessionId}`, {
+      const response = await fetch(`${API_BASE_URL}/music/pause/${state.session.sessionId}`, {
         method: 'POST',
       });
+
+      if (response.status === 404) {
+        // Session no longer exists on server, reset state
+        console.warn('Session not found, resetting state');
+        await cleanup();
+        setState({
+          status: 'idle',
+          currentBook: null,
+          session: null,
+          error: null,
+        });
+        return;
+      }
 
       isPlayingRef.current = false;
       setState(prev => ({ ...prev, status: 'paused' }));
@@ -389,17 +476,30 @@ export function useAmbientMusic(): UseAmbientMusicResult {
     } catch (error) {
       console.error('Error pausing music:', error);
     }
-  }, [state.session]);
+  }, [state.session, cleanup]);
 
   // Resume music
   const resume = useCallback(async () => {
-    if (!state.session || !wsRef.current) return;
+    if (!state.session || !socketRef.current) return;
 
     try {
       // Send resume command via REST API
-      await fetch(`${API_BASE_URL}/music/resume/${state.session.sessionId}`, {
+      const response = await fetch(`${API_BASE_URL}/music/resume/${state.session.sessionId}`, {
         method: 'POST',
       });
+
+      if (response.status === 404) {
+        // Session no longer exists on server, reset state
+        console.warn('Session not found, resetting state');
+        await cleanup();
+        setState({
+          status: 'idle',
+          currentBook: null,
+          session: null,
+          error: null,
+        });
+        return;
+      }
 
       isPlayingRef.current = true;
       setState(prev => ({ ...prev, status: 'playing' }));
@@ -420,7 +520,7 @@ export function useAmbientMusic(): UseAmbientMusicResult {
     } catch (error) {
       console.error('Error resuming music:', error);
     }
-  }, [state.session, playNextInQueue]);
+  }, [state.session, playNextInQueue, cleanup]);
 
   // Stop music
   const stop = useCallback(async () => {

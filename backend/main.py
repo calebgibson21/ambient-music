@@ -2,7 +2,7 @@
 FastAPI backend for Lyria ambient music streaming.
 
 Provides REST endpoints to start/stop music sessions and 
-WebSocket endpoint for streaming audio to clients.
+Socket.IO for streaming audio to clients.
 """
 
 import asyncio
@@ -12,8 +12,9 @@ import uuid
 from contextlib import asynccontextmanager
 from typing import Optional
 
+import socketio
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -31,11 +32,19 @@ if not GEMINI_API_KEY:
 # Global session manager
 session_manager: Optional[LyriaSessionManager] = None
 
-# WebSocket connections per session
-websocket_connections: dict[str, list[WebSocket]] = {}
-
-# Audio queues for each session (to buffer chunks for WebSocket clients)
+# Audio queues for each session (to buffer chunks for Socket.IO clients)
 audio_queues: dict[str, asyncio.Queue] = {}
+
+# Create Socket.IO server with ASGI mode
+sio = socketio.AsyncServer(
+    async_mode="asgi",
+    cors_allowed_origins="*",
+    logger=False,
+    engineio_logger=False,
+)
+
+# Mapping of socket ID to session ID for cleanup
+socket_sessions: dict[str, str] = {}
 
 
 @asynccontextmanager
@@ -48,7 +57,7 @@ async def lifespan(app: FastAPI):
     await session_manager.close_all()
 
 
-app = FastAPI(
+fastapi_app = FastAPI(
     title="Ambient Music API",
     description="Stream AI-generated ambient music based on book themes",
     version="1.0.0",
@@ -56,13 +65,16 @@ app = FastAPI(
 )
 
 # CORS configuration for React Native
-app.add_middleware(
+fastapi_app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],  # In production, restrict this
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Wrap FastAPI with Socket.IO ASGI app
+app = socketio.ASGIApp(sio, other_asgi_app=fastapi_app)
 
 
 # Request/Response Models
@@ -82,7 +94,6 @@ class StartMusicRequest(BaseModel):
 class StartMusicResponse(BaseModel):
     """Response with session information."""
     session_id: str
-    websocket_url: str
     prompts: list[dict[str, float | str]]
 
 
@@ -93,39 +104,43 @@ class SessionStatusResponse(BaseModel):
     prompts: list[dict[str, float | str]]
 
 
-# Helper to broadcast audio to connected WebSocket clients
-async def broadcast_audio_to_clients(session_id: str) -> None:
+# Helper to broadcast audio to Socket.IO room
+async def broadcast_audio_to_room(session_id: str) -> None:
     """
     Background task that reads from the audio queue and 
-    broadcasts to all connected WebSocket clients.
+    broadcasts to all clients in the Socket.IO room.
     """
+    print(f"Broadcast task started for session {session_id}")
     queue = audio_queues.get(session_id)
     if not queue:
+        print("No queue found!")
         return
+    
+    room_name = f"session_{session_id}"
+    chunk_count = 0
+    total_bytes = 0
     
     while True:
         try:
+            print(f"Waiting for audio from queue (size: {queue.qsize()})...")
             audio_data = await asyncio.wait_for(queue.get(), timeout=1.0)
+            print(f"Got audio chunk from queue: {len(audio_data)} bytes")
             
-            # Get connected clients for this session
-            clients = websocket_connections.get(session_id, [])
+            # Encode audio as base64 for transmission
+            print("Encoding to base64...")
+            encoded = base64.b64encode(audio_data).decode('utf-8')
+            print(f"Encoded size: {len(encoded)} chars, emitting to room {room_name}...")
             
-            if clients:
-                # Encode audio as base64 for WebSocket transmission
-                encoded = base64.b64encode(audio_data).decode('utf-8')
-                message = {"type": "audio", "data": encoded}
-                
-                # Send to all clients
-                disconnected = []
-                for ws in clients:
-                    try:
-                        await ws.send_json(message)
-                    except Exception:
-                        disconnected.append(ws)
-                
-                # Remove disconnected clients
-                for ws in disconnected:
-                    clients.remove(ws)
+            # Emit to all clients in the session room
+            await sio.emit("audio_chunk", {"data": encoded}, room=room_name)
+            print("Emit complete")
+            
+            chunk_count += 1
+            total_bytes += len(audio_data)
+            
+            # Log every 50 chunks (~1 second of audio at typical chunk rates)
+            if chunk_count % 50 == 0:
+                print(f"Audio streaming: {chunk_count} chunks sent ({total_bytes / 1024:.1f} KB)")
             
             queue.task_done()
         except asyncio.TimeoutError:
@@ -137,6 +152,8 @@ async def broadcast_audio_to_clients(session_id: str) -> None:
         except Exception as e:
             print(f"Broadcast error: {e}")
             break
+    
+    print(f"Audio broadcast ended: {chunk_count} total chunks ({total_bytes / 1024:.1f} KB)")
 
 
 # Stored prompts per session for status endpoint
@@ -146,12 +163,120 @@ session_prompts: dict[str, list[dict]] = {}
 broadcast_tasks: dict[str, asyncio.Task] = {}
 
 
-@app.post("/music/start", response_model=StartMusicResponse)
+# Socket.IO Event Handlers
+@sio.event
+async def connect(sid, environ):
+    """Handle client connection."""
+    print(f"Client connected: {sid}")
+
+
+@sio.event
+async def disconnect(sid):
+    """Handle client disconnection."""
+    print(f"Client disconnected: {sid}")
+    # Clean up session mapping
+    session_id = socket_sessions.pop(sid, None)
+    if session_id:
+        room_name = f"session_{session_id}"
+        await sio.leave_room(sid, room_name)
+
+
+@sio.event
+async def join_session(sid, data):
+    """
+    Handle client joining a music session.
+    
+    Expected data: {"session_id": "uuid"}
+    """
+    session_id = data.get("session_id")
+    print(f"Client {sid} requesting to join session: {session_id}")
+    
+    if not session_manager:
+        await sio.emit("error", {"message": "Service not initialized"}, to=sid)
+        return
+    
+    session = session_manager.get_session(session_id)
+    if not session:
+        print(f"Session {session_id} not found")
+        await sio.emit("error", {"message": "Session not found"}, to=sid)
+        return
+    
+    # Join the session room
+    room_name = f"session_{session_id}"
+    await sio.enter_room(sid, room_name)
+    socket_sessions[sid] = session_id
+    print(f"Client {sid} joined room {room_name}")
+    
+    # Send initial status
+    await sio.emit("session_joined", {
+        "session_id": session_id,
+        "is_playing": session.is_playing,
+        "sample_rate": 48000,
+        "channels": 2,
+        "format": "pcm16",
+    }, to=sid)
+
+
+@sio.event
+async def leave_session(sid, data):
+    """Handle client leaving a music session."""
+    session_id = data.get("session_id")
+    if session_id:
+        room_name = f"session_{session_id}"
+        await sio.leave_room(sid, room_name)
+        socket_sessions.pop(sid, None)
+
+
+@sio.event
+async def pause(sid, data):
+    """Handle pause command from client."""
+    session_id = data.get("session_id")
+    
+    if not session_manager:
+        await sio.emit("error", {"message": "Service not initialized"}, to=sid)
+        return
+    
+    session = session_manager.get_session(session_id)
+    if not session:
+        await sio.emit("error", {"message": "Session not found"}, to=sid)
+        return
+    
+    await session.pause()
+    
+    # Notify all clients in the room
+    room_name = f"session_{session_id}"
+    await sio.emit("status", {"is_playing": False}, room=room_name)
+
+
+@sio.event
+async def resume(sid, data):
+    """Handle resume command from client."""
+    session_id = data.get("session_id")
+    
+    if not session_manager:
+        await sio.emit("error", {"message": "Service not initialized"}, to=sid)
+        return
+    
+    session = session_manager.get_session(session_id)
+    if not session:
+        await sio.emit("error", {"message": "Session not found"}, to=sid)
+        return
+    
+    await session.resume()
+    
+    # Notify all clients in the room
+    room_name = f"session_{session_id}"
+    await sio.emit("status", {"is_playing": True}, room=room_name)
+
+
+# REST Endpoints
+@fastapi_app.post("/music/start", response_model=StartMusicResponse)
 async def start_music(request: StartMusicRequest):
     """
     Start a new music generation session for a book.
     
-    Returns a session ID and WebSocket URL for streaming audio.
+    Returns a session ID. Client should connect via Socket.IO
+    and emit 'join_session' with the session_id.
     """
     if not session_manager:
         raise HTTPException(status_code=503, detail="Service not initialized")
@@ -190,7 +315,6 @@ async def start_music(request: StartMusicRequest):
     
     # Create audio queue for this session
     audio_queues[session_id] = asyncio.Queue(maxsize=100)
-    websocket_connections[session_id] = []
     
     # Store prompts for status endpoint
     prompt_list = [{"text": p.text, "weight": p.weight} for p in prompts]
@@ -199,25 +323,28 @@ async def start_music(request: StartMusicRequest):
     # Start streaming with callback to queue audio
     def on_audio_chunk(data: bytes):
         try:
+            print(f"Queueing audio chunk: {len(data)} bytes")
             audio_queues[session_id].put_nowait(data)
+            print(f"Chunk queued, queue size: {audio_queues[session_id].qsize()}")
         except asyncio.QueueFull:
-            pass  # Drop oldest if queue is full
+            print("Queue full, dropping chunk")
+        except Exception as e:
+            print(f"Error queueing chunk: {e}")
     
     await session.start_streaming(on_audio_chunk)
     
     # Start broadcast task
     broadcast_tasks[session_id] = asyncio.create_task(
-        broadcast_audio_to_clients(session_id)
+        broadcast_audio_to_room(session_id)
     )
     
     return StartMusicResponse(
         session_id=session_id,
-        websocket_url=f"/music/stream/{session_id}",
         prompts=prompt_list,
     )
 
 
-@app.post("/music/stop/{session_id}")
+@fastapi_app.post("/music/stop/{session_id}")
 async def stop_music(session_id: str):
     """Stop a music session."""
     if not session_manager:
@@ -236,13 +363,12 @@ async def stop_music(session_id: str):
         except asyncio.CancelledError:
             pass
     
-    # Close all WebSocket connections
-    clients = websocket_connections.pop(session_id, [])
-    for ws in clients:
-        try:
-            await ws.close()
-        except Exception:
-            pass
+    # Notify clients in the room that session is stopping
+    room_name = f"session_{session_id}"
+    await sio.emit("session_stopped", {"session_id": session_id}, room=room_name)
+    
+    # Close all sockets in the room
+    await sio.close_room(room_name)
     
     # Clean up queues and prompts
     audio_queues.pop(session_id, None)
@@ -254,7 +380,7 @@ async def stop_music(session_id: str):
     return {"status": "stopped", "session_id": session_id}
 
 
-@app.post("/music/pause/{session_id}")
+@fastapi_app.post("/music/pause/{session_id}")
 async def pause_music(session_id: str):
     """Pause a music session."""
     if not session_manager:
@@ -265,10 +391,15 @@ async def pause_music(session_id: str):
         raise HTTPException(status_code=404, detail="Session not found")
     
     await session.pause()
+    
+    # Notify all clients in the room
+    room_name = f"session_{session_id}"
+    await sio.emit("status", {"is_playing": False}, room=room_name)
+    
     return {"status": "paused", "session_id": session_id}
 
 
-@app.post("/music/resume/{session_id}")
+@fastapi_app.post("/music/resume/{session_id}")
 async def resume_music(session_id: str):
     """Resume a paused music session."""
     if not session_manager:
@@ -279,10 +410,15 @@ async def resume_music(session_id: str):
         raise HTTPException(status_code=404, detail="Session not found")
     
     await session.resume()
+    
+    # Notify all clients in the room
+    room_name = f"session_{session_id}"
+    await sio.emit("status", {"is_playing": True}, room=room_name)
+    
     return {"status": "playing", "session_id": session_id}
 
 
-@app.get("/music/status/{session_id}", response_model=SessionStatusResponse)
+@fastapi_app.get("/music/status/{session_id}", response_model=SessionStatusResponse)
 async def get_session_status(session_id: str):
     """Get the status of a music session."""
     if not session_manager:
@@ -299,69 +435,7 @@ async def get_session_status(session_id: str):
     )
 
 
-@app.websocket("/music/stream/{session_id}")
-async def websocket_stream(websocket: WebSocket, session_id: str):
-    """
-    WebSocket endpoint for streaming audio to clients.
-    
-    Clients receive JSON messages with base64-encoded PCM audio:
-    {"type": "audio", "data": "<base64 encoded PCM16 audio>"}
-    """
-    if not session_manager:
-        await websocket.close(code=1013, reason="Service not initialized")
-        return
-    
-    session = session_manager.get_session(session_id)
-    if not session:
-        await websocket.close(code=1008, reason="Session not found")
-        return
-    
-    await websocket.accept()
-    
-    # Add to connection list
-    if session_id not in websocket_connections:
-        websocket_connections[session_id] = []
-    websocket_connections[session_id].append(websocket)
-    
-    # Send initial status
-    await websocket.send_json({
-        "type": "status",
-        "is_playing": session.is_playing,
-        "sample_rate": 48000,
-        "channels": 2,
-        "format": "pcm16",
-    })
-    
-    try:
-        # Keep connection alive and handle client messages
-        while True:
-            try:
-                message = await websocket.receive_json()
-                
-                # Handle control messages from client
-                if message.get("type") == "pause":
-                    await session.pause()
-                    await websocket.send_json({"type": "status", "is_playing": False})
-                elif message.get("type") == "resume":
-                    await session.resume()
-                    await websocket.send_json({"type": "status", "is_playing": True})
-                elif message.get("type") == "ping":
-                    await websocket.send_json({"type": "pong"})
-            except Exception:
-                # Client disconnected or invalid message
-                break
-    except WebSocketDisconnect:
-        pass
-    finally:
-        # Remove from connection list
-        if session_id in websocket_connections:
-            try:
-                websocket_connections[session_id].remove(websocket)
-            except ValueError:
-                pass
-
-
-@app.get("/health")
+@fastapi_app.get("/health")
 async def health_check():
     """Health check endpoint."""
     return {"status": "healthy", "api_key_configured": bool(GEMINI_API_KEY)}

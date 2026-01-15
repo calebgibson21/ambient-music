@@ -139,6 +139,7 @@ class LyriaSession:
             return
         
         print("Starting audio receive loop...")
+        chunk_count = 0
         try:
             async for message in self._session.receive():
                 if not self._is_playing:
@@ -147,12 +148,15 @@ class LyriaSession:
                 if message.server_content and message.server_content.audio_chunks:
                     for chunk in message.server_content.audio_chunks:
                         if self._on_audio_chunk and chunk.data:
+                            chunk_count += 1
+                            if chunk_count % 50 == 1:
+                                print(f"Received audio chunk #{chunk_count}, size: {len(chunk.data)} bytes")
                             self._on_audio_chunk(chunk.data)
                 
                 # Small yield to prevent blocking
                 await asyncio.sleep(0)
         except asyncio.CancelledError:
-            print("Audio receive loop cancelled")
+            print(f"Audio receive loop cancelled after {chunk_count} chunks")
         except Exception as e:
             print(f"Error receiving audio: {e}")
             traceback.print_exc()
