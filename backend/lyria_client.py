@@ -141,6 +141,9 @@ class LyriaSession:
         try:
             async for message in self._session.receive():
                 if not self._is_playing:
+                    # #region agent log
+                    import json; open('/Users/calebgibson/Code/ambient-music/.cursor/debug.log','a').write(json.dumps({"location":"lyria_client.py:receive-loop-exit","message":"exiting loop - is_playing false","data":{"chunks_so_far":chunk_count},"timestamp":__import__('time').time()*1000,"sessionId":"debug-session","hypothesisId":"H3-H5"})+'\n')
+                    # #endregion
                     break
                 
                 if message.server_content and message.server_content.audio_chunks:
@@ -156,8 +159,14 @@ class LyriaSession:
                 await asyncio.sleep(0)
         except asyncio.CancelledError:
             log_info("lyria_receive_loop_cancelled", chunks_received=chunk_count, total_bytes=total_bytes)
+            # #region agent log
+            import json; open('/Users/calebgibson/Code/ambient-music/.cursor/debug.log','a').write(json.dumps({"location":"lyria_client.py:receive-loop-cancelled","message":"loop cancelled","data":{"chunks":chunk_count,"bytes":total_bytes},"timestamp":__import__('time').time()*1000,"sessionId":"debug-session","hypothesisId":"H3-H5"})+'\n')
+            # #endregion
         except Exception as e:
             log_error("lyria_receive_error", error=str(e), chunks_received=chunk_count)
+            # #region agent log
+            import json; open('/Users/calebgibson/Code/ambient-music/.cursor/debug.log','a').write(json.dumps({"location":"lyria_client.py:receive-loop-error","message":"loop error","data":{"error":str(e),"error_type":type(e).__name__,"chunks":chunk_count},"timestamp":__import__('time').time()*1000,"sessionId":"debug-session","hypothesisId":"H3-H4"})+'\n')
+            # #endregion
     
     async def update_prompts(self, prompts: list[WeightedPrompt]) -> None:
         """Update the music prompts while streaming."""
@@ -172,15 +181,36 @@ class LyriaSession:
     
     async def pause(self) -> None:
         """Pause music playback."""
+        # #region agent log
+        import json; open('/Users/calebgibson/Code/ambient-music/.cursor/debug.log','a').write(json.dumps({"location":"lyria_client.py:pause","message":"pause called","data":{"has_session":self._session is not None,"is_playing":self._is_playing},"timestamp":__import__('time').time()*1000,"sessionId":"debug-session","hypothesisId":"H1-H2"})+'\n')
+        # #endregion
         if self._session and self._is_playing:
             await self._session.pause()
             self._is_playing = False
+            # #region agent log
+            import json; open('/Users/calebgibson/Code/ambient-music/.cursor/debug.log','a').write(json.dumps({"location":"lyria_client.py:pause-done","message":"pause completed","data":{"is_playing":self._is_playing},"timestamp":__import__('time').time()*1000,"sessionId":"debug-session","hypothesisId":"H1"})+'\n')
+            # #endregion
     
     async def resume(self) -> None:
         """Resume music playback."""
+        # #region agent log
+        import json; open('/Users/calebgibson/Code/ambient-music/.cursor/debug.log','a').write(json.dumps({"location":"lyria_client.py:resume","message":"resume called","data":{"has_session":self._session is not None,"is_playing":self._is_playing,"session_type":str(type(self._session))},"timestamp":__import__('time').time()*1000,"sessionId":"debug-session","hypothesisId":"H1-H2"})+'\n')
+        # #endregion
         if self._session and not self._is_playing:
-            await self._session.play()
-            self._is_playing = True
+            try:
+                # #region agent log
+                import json; open('/Users/calebgibson/Code/ambient-music/.cursor/debug.log','a').write(json.dumps({"location":"lyria_client.py:resume-pre-play","message":"about to call session.play()","data":{"session_attrs":dir(self._session)[:10]},"timestamp":__import__('time').time()*1000,"sessionId":"debug-session","hypothesisId":"H2-H4"})+'\n')
+                # #endregion
+                await self._session.play()
+                self._is_playing = True
+                # #region agent log
+                import json; open('/Users/calebgibson/Code/ambient-music/.cursor/debug.log','a').write(json.dumps({"location":"lyria_client.py:resume-success","message":"resume play() succeeded","data":{"is_playing":self._is_playing},"timestamp":__import__('time').time()*1000,"sessionId":"debug-session","hypothesisId":"H1"})+'\n')
+                # #endregion
+            except Exception as e:
+                # #region agent log
+                import json; open('/Users/calebgibson/Code/ambient-music/.cursor/debug.log','a').write(json.dumps({"location":"lyria_client.py:resume-error","message":"resume play() failed","data":{"error":str(e),"error_type":type(e).__name__},"timestamp":__import__('time').time()*1000,"sessionId":"debug-session","hypothesisId":"H1-H4"})+'\n')
+                # #endregion
+                raise
     
     async def stop(self) -> None:
         """Stop music playback and clean up."""

@@ -31,6 +31,7 @@ export interface BufferMetrics {
   soundsCreated: number;
   soundsPlayed: number;
   lastChunkTimestamp: number;
+  isAudioPlaying: boolean;  // True when audio is actually playing through speakers
 }
 
 interface UseAmbientMusicResult {
@@ -121,6 +122,7 @@ const initialMetrics: BufferMetrics = {
   soundsCreated: 0,
   soundsPlayed: 0,
   lastChunkTimestamp: 0,
+  isAudioPlaying: false,
 };
 
 export function useAmbientMusic(): UseAmbientMusicResult {
@@ -615,6 +617,8 @@ export function useAmbientMusic(): UseAmbientMusicResult {
               minRequired: MIN_SOUNDS_BEFORE_PLAYBACK,
             });
             initialPlaybackStartedRef.current = true;
+            metricsRef.current.isAudioPlaying = true;
+            setMetrics({ ...metricsRef.current });
             playNextInQueue(false);
           } else {
             logDebug('buffering_before_playback', {
@@ -853,6 +857,8 @@ export function useAmbientMusic(): UseAmbientMusicResult {
       }
 
       isPlayingRef.current = false;
+      metricsRef.current.isAudioPlaying = false;
+      setMetrics({ ...metricsRef.current });
       setState(prev => ({ ...prev, status: 'paused' }));
       logInfo('paused');
 
@@ -917,6 +923,8 @@ export function useAmbientMusic(): UseAmbientMusicResult {
       }
 
       isPlayingRef.current = true;
+      metricsRef.current.isAudioPlaying = true;
+      setMetrics({ ...metricsRef.current });
       setState(prev => ({ ...prev, status: 'playing' }));
       logInfo('resumed');
 

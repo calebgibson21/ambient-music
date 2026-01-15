@@ -498,7 +498,13 @@ async def pause_music(session_id: str):
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
     
+    # #region agent log
+    import json; open('/Users/calebgibson/Code/ambient-music/.cursor/debug.log','a').write(json.dumps({"location":"main.py:pause_music-pre","message":"about to call session.pause","data":{"session_id":session_id,"session_is_playing":session.is_playing},"timestamp":__import__('time').time()*1000,"sessionId":"debug-session","hypothesisId":"H1-H3"})+'\n')
+    # #endregion
     await session.pause()
+    # #region agent log
+    import json; open('/Users/calebgibson/Code/ambient-music/.cursor/debug.log','a').write(json.dumps({"location":"main.py:pause_music-post","message":"pause completed","data":{"session_id":session_id,"session_is_playing":session.is_playing},"timestamp":__import__('time').time()*1000,"sessionId":"debug-session","hypothesisId":"H1"})+'\n')
+    # #endregion
     log_info("session_paused_rest", session_id=session_id)
     
     # Notify all clients in the room
@@ -511,6 +517,9 @@ async def pause_music(session_id: str):
 @fastapi_app.post("/music/resume/{session_id}")
 async def resume_music(session_id: str):
     """Resume a paused music session."""
+    # #region agent log
+    import json; open('/Users/calebgibson/Code/ambient-music/.cursor/debug.log','a').write(json.dumps({"location":"main.py:resume_music","message":"resume endpoint called","data":{"session_id":session_id},"timestamp":__import__('time').time()*1000,"sessionId":"debug-session","hypothesisId":"H1"})+'\n')
+    # #endregion
     if not session_manager:
         raise HTTPException(status_code=503, detail="Service not initialized")
     
@@ -518,6 +527,9 @@ async def resume_music(session_id: str):
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
     
+    # #region agent log
+    import json; open('/Users/calebgibson/Code/ambient-music/.cursor/debug.log','a').write(json.dumps({"location":"main.py:resume_music-pre","message":"about to call session.resume","data":{"session_id":session_id,"session_is_playing":session.is_playing},"timestamp":__import__('time').time()*1000,"sessionId":"debug-session","hypothesisId":"H1-H2"})+'\n')
+    # #endregion
     await session.resume()
     log_info("session_resumed_rest", session_id=session_id)
     
