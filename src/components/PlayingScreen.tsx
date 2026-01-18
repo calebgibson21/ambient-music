@@ -7,45 +7,43 @@ import {
   Animated,
   Dimensions,
   Image,
+  ScrollView,
 } from 'react-native';
+import Slider from '@react-native-community/slider';
 import { Ionicons } from '@expo/vector-icons';
 import { useMusic } from '../context/MusicContext';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
-const WAVE_MIN_SCALE = 0.15; // Minimal height when paused
-const WAVE_PULSE_MIN = 0.3;  // Minimum during pulse animation
+const WAVE_MIN_SCALE = 0.15;
+const WAVE_PULSE_MIN = 0.3;
 
-// Animated wave bar with entrance animation
+// Animated wave bar with entrance animation (duplicated from MusicPlayer.tsx)
 function WaveBar({ delay, isAnimating, entranceDelay }: { delay: number; isAnimating: boolean; entranceDelay: number }) {
   const scaleY = useRef(new Animated.Value(WAVE_MIN_SCALE)).current;
   const [hasEntered, setHasEntered] = useState(false);
   const pulseAnimRef = useRef<Animated.CompositeAnimation | null>(null);
   const wasAnimatingRef = useRef(false);
 
-  // Track previous animating state to detect transitions
   useEffect(() => {
     const wasAnimating = wasAnimatingRef.current;
     wasAnimatingRef.current = isAnimating;
 
-    // Stop any existing animation first
     if (pulseAnimRef.current) {
       pulseAnimRef.current.stop();
       pulseAnimRef.current = null;
     }
 
     if (isAnimating && !hasEntered) {
-      // First time animating - do entrance animation then start pulse
       setHasEntered(true);
-      
+
       Animated.timing(scaleY, {
         toValue: 1,
         duration: 300,
         delay: entranceDelay,
         useNativeDriver: true,
       }).start(() => {
-        // Start pulse animation after entrance
-        if (wasAnimatingRef.current) { // Still animating after entrance completes
+        if (wasAnimatingRef.current) {
           const pulseAnim = Animated.loop(
             Animated.sequence([
               Animated.timing(scaleY, {
@@ -66,13 +64,12 @@ function WaveBar({ delay, isAnimating, entranceDelay }: { delay: number; isAnima
         }
       });
     } else if (isAnimating && hasEntered) {
-      // Resuming from pause - animate back up then restart pulse
       Animated.timing(scaleY, {
         toValue: 1,
         duration: 250,
         useNativeDriver: true,
       }).start(() => {
-        if (wasAnimatingRef.current) { // Still animating after grow-up completes
+        if (wasAnimatingRef.current) {
           const pulseAnim = Animated.loop(
             Animated.sequence([
               Animated.timing(scaleY, {
@@ -93,7 +90,6 @@ function WaveBar({ delay, isAnimating, entranceDelay }: { delay: number; isAnima
         }
       });
     } else if (!isAnimating && hasEntered) {
-      // Paused - settle to minimal height
       Animated.timing(scaleY, {
         toValue: WAVE_MIN_SCALE,
         duration: 300,
@@ -114,15 +110,15 @@ function WaveBar({ delay, isAnimating, entranceDelay }: { delay: number; isAnima
   );
 }
 
-// Status indicator with smooth transitions between loading and visualizer
-function StatusIndicator({ 
-  isLoading, 
-  isBuffering, 
+// Status indicator with smooth transitions (duplicated from MusicPlayer.tsx)
+function StatusIndicator({
+  isLoading,
+  isBuffering,
   isPlaying,
   isPaused,
-}: { 
-  isLoading: boolean; 
-  isBuffering: boolean; 
+}: {
+  isLoading: boolean;
+  isBuffering: boolean;
   isPlaying: boolean;
   isPaused: boolean;
 }) {
@@ -130,9 +126,7 @@ function StatusIndicator({
   const visualizerOpacity = useRef(new Animated.Value(0)).current;
   const shimmerAnim = useRef(new Animated.Value(0)).current;
   const prevIsLoadingRef = useRef(true);
-  const hasEverShownVisualizerRef = useRef(false);
 
-  // Shimmer animation for loading bar
   useEffect(() => {
     const animation = Animated.loop(
       Animated.timing(shimmerAnim, {
@@ -145,14 +139,11 @@ function StatusIndicator({
     return () => animation.stop();
   }, [shimmerAnim]);
 
-  // Crossfade transition - react to isLoading changes
   useEffect(() => {
     const wasLoading = prevIsLoadingRef.current;
     prevIsLoadingRef.current = isLoading;
 
     if (wasLoading && !isLoading) {
-      // Transition: loading -> not loading (show visualizer)
-      hasEverShownVisualizerRef.current = true;
       Animated.parallel([
         Animated.timing(loadingOpacity, {
           toValue: 0,
@@ -167,8 +158,6 @@ function StatusIndicator({
         }),
       ]).start();
     } else if (!wasLoading && isLoading) {
-      // Transition: not loading -> loading (show loading bar)
-      hasEverShownVisualizerRef.current = false;
       Animated.parallel([
         Animated.timing(loadingOpacity, {
           toValue: 1,
@@ -182,7 +171,6 @@ function StatusIndicator({
         }),
       ]).start();
     }
-    // No animation needed if isLoading didn't change (pause/resume)
   }, [isLoading, loadingOpacity, visualizerOpacity]);
 
   const shimmerTranslateX = shimmerAnim.interpolate({
@@ -190,12 +178,10 @@ function StatusIndicator({
     outputRange: [-100, 100],
   });
 
-  // Determine if wave bars should animate (playing and not loading)
   const shouldAnimateWaves = isPlaying && !isLoading;
 
   return (
     <View style={styles.statusIndicatorContainer}>
-      {/* Loading bar layer */}
       <Animated.View style={[styles.statusLayer, { opacity: loadingOpacity }]}>
         <View style={styles.loadingBarContainer}>
           <View style={styles.loadingBarTrack}>
@@ -212,19 +198,18 @@ function StatusIndicator({
         </View>
       </Animated.View>
 
-      {/* Visualizer layer - always rendered */}
-      <Animated.View 
+      <Animated.View
         style={[
-          styles.statusLayer, 
-          styles.visualizerLayer, 
+          styles.statusLayer,
+          styles.visualizerLayer,
           { opacity: visualizerOpacity }
         ]}
       >
         <View style={styles.visualizer}>
           {[...Array(5)].map((_, i) => (
-            <WaveBar 
-              key={i} 
-              delay={i * 80} 
+            <WaveBar
+              key={i}
+              delay={i * 80}
               isAnimating={shouldAnimateWaves}
               entranceDelay={i * 60}
             />
@@ -235,41 +220,39 @@ function StatusIndicator({
   );
 }
 
-interface MusicPlayerProps {
-  onExpand?: () => void;
+interface PlayingScreenProps {
+  onClose: () => void;
 }
 
-/**
- * Floating music player component that appears when music is playing.
- *
- * Features:
- * - Minimized view showing current book and controls
- * - Tappable to open full-screen player
- * - Play/pause/stop controls
- */
-export function MusicPlayer({ onExpand }: MusicPlayerProps) {
-  const { status, currentBook, metrics, pause, resume, stop } = useMusic();
-  const slideAnim = useRef(new Animated.Value(100)).current;
+export function PlayingScreen({ onClose }: PlayingScreenProps) {
+  const { status, currentBook, metrics, pause, resume } = useMusic();
+  const [intensity, setIntensity] = useState(50);
+  const slideAnim = useRef(new Animated.Value(1)).current; // 1 = off screen (bottom), 0 = on screen
 
-  const isVisible = status !== 'idle' && currentBook !== null;
   const isPlaying = status === 'playing';
   const isPaused = status === 'paused';
   const isBuffering = isPlaying && !metrics.isAudioPlaying;
-  // Show loading bar until audio is actually playing through speakers
   const isLoading = status === 'connecting' || isBuffering;
 
-  // Slide in/out animation
+  // Animate in on mount
   useEffect(() => {
     Animated.spring(slideAnim, {
-      toValue: isVisible ? 0 : 100,
+      toValue: 0,
       useNativeDriver: true,
       friction: 8,
+      tension: 65,
     }).start();
-  }, [isVisible, slideAnim]);
+  }, [slideAnim]);
 
-  if (!isVisible) {
-    return null;
-  }
+  const handleClose = () => {
+    Animated.timing(slideAnim, {
+      toValue: 1,
+      duration: 250,
+      useNativeDriver: true,
+    }).start(() => {
+      onClose();
+    });
+  };
 
   const handlePlayPause = async () => {
     if (isPlaying) {
@@ -279,105 +262,138 @@ export function MusicPlayer({ onExpand }: MusicPlayerProps) {
     }
   };
 
+  const screenHeight = Dimensions.get('window').height;
+  const translateY = slideAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0, screenHeight],
+  });
+
   return (
-    <Animated.View
-      style={[
-        styles.container,
-        {
-          transform: [{ translateY: slideAnim }],
-        },
-      ]}
-    >
-      {/* Main player bar */}
+    <Animated.View style={[styles.overlay, { transform: [{ translateY }] }]}>
+      {/* Close button */}
       <TouchableOpacity
-        style={styles.mainBar}
-        onPress={onExpand}
-        activeOpacity={0.9}
+        style={styles.closeButton}
+        onPress={handleClose}
+        activeOpacity={0.7}
       >
-        {/* Book cover thumbnail */}
-        <View style={styles.coverContainer}>
-          {currentBook?.coverUrl ? (
-            <Image
-              source={{ uri: currentBook.coverUrl }}
-              style={styles.coverImage}
-              resizeMode="cover"
-            />
-          ) : (
-            <View style={styles.coverPlaceholder}>
-              <Text style={styles.coverPlaceholderText}>
-                {currentBook?.title.charAt(0).toUpperCase()}
-              </Text>
-            </View>
-          )}
-        </View>
-
-        {/* Book info and visualizer */}
-        <View style={styles.infoContainer}>
-          <Text style={styles.bookTitle} numberOfLines={1}>
-            {currentBook?.title}
-          </Text>
-          <View style={styles.statusRow}>
-            <StatusIndicator 
-              isLoading={isLoading} 
-              isBuffering={isBuffering} 
-              isPlaying={isPlaying}
-              isPaused={isPaused}
-            />
-          </View>
-        </View>
-
-        {/* Controls */}
-        <View style={styles.controls}>
-          <TouchableOpacity
-            style={styles.controlButton}
-            onPress={handlePlayPause}
-            disabled={isLoading}
-          >
-            <Ionicons
-              name={isLoading ? 'hourglass-outline' : isPlaying ? 'pause' : 'play'}
-              size={18}
-              color="#A78BFA"
-            />
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.controlButton}
-            onPress={stop}
-          >
-            <Ionicons name="stop" size={18} color="#A78BFA" />
-          </TouchableOpacity>
-        </View>
+        <Ionicons name="chevron-down" size={28} color="#A1A1AA" />
       </TouchableOpacity>
+
+      <ScrollView
+        style={styles.scrollView}
+        contentContainerStyle={styles.contentContainer}
+        showsVerticalScrollIndicator={false}
+      >
+      {/* Book cover */}
+      <View style={styles.coverContainer}>
+        {currentBook?.coverUrl ? (
+          <Image
+            source={{ uri: currentBook.coverUrl }}
+            style={styles.coverImage}
+            resizeMode="cover"
+          />
+        ) : (
+          <View style={styles.coverPlaceholder}>
+            <Text style={styles.coverPlaceholderText}>
+              {currentBook?.title.charAt(0).toUpperCase()}
+            </Text>
+          </View>
+        )}
+      </View>
+
+      {/* Book title */}
+      <Text style={styles.bookTitle} numberOfLines={2}>
+        {currentBook?.title}
+      </Text>
+
+
+      {/* Status indicator */}
+      <View style={styles.statusContainer}>
+        <StatusIndicator
+          isLoading={isLoading}
+          isBuffering={isBuffering}
+          isPlaying={isPlaying}
+          isPaused={isPaused}
+        />
+      </View>
+
+      {/* Play/Pause button */}
+      <TouchableOpacity
+        style={styles.playButton}
+        onPress={handlePlayPause}
+        disabled={isLoading}
+        activeOpacity={0.7}
+      >
+        <Ionicons
+          name={isLoading ? 'hourglass-outline' : isPlaying ? 'pause' : 'play'}
+          size={32}
+          color="#A78BFA"
+        />
+      </TouchableOpacity>
+
+      {/* Intensity slider */}
+      <View style={styles.sliderContainer}>
+        <Text style={styles.sliderLabel}>Intensity</Text>
+        <Slider
+          style={styles.slider}
+          minimumValue={0}
+          maximumValue={100}
+          value={intensity}
+          onValueChange={setIntensity}
+          minimumTrackTintColor="#A78BFA"
+          maximumTrackTintColor="rgba(167, 139, 250, 0.2)"
+          thumbTintColor="#A78BFA"
+        />
+        <Text style={styles.sliderValue}>{Math.round(intensity)}%</Text>
+      </View>
+      </ScrollView>
     </Animated.View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  overlay: {
     position: 'absolute',
-    bottom: 70, // Flush with top of bottom navigation
+    top: 0,
     left: 0,
     right: 0,
-    backgroundColor: '#1E1E28',
-    borderTopWidth: 1,
-    borderTopColor: '#2D2D3A',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: -2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    elevation: 10,
+    bottom: 0,
+    backgroundColor: '#0F0F14',
+    zIndex: 100,
   },
-  mainBar: {
-    flexDirection: 'row',
+  closeButton: {
+    position: 'absolute',
+    top: 50,
+    left: 16,
+    zIndex: 101,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(39, 39, 42, 0.8)',
     alignItems: 'center',
-    padding: 12,
-    paddingRight: 8,
+    justifyContent: 'center',
   },
+  scrollView: {
+    flex: 1,
+  },
+  contentContainer: {
+    alignItems: 'center',
+    paddingHorizontal: 24,
+    paddingTop: 100,
+    paddingBottom: 24,
+  },
+  // Cover
   coverContainer: {
-    width: 48,
-    height: 48,
-    borderRadius: 8,
+    width: SCREEN_WIDTH * 0.6,
+    aspectRatio: 2 / 3,
+    borderRadius: 12,
     overflow: 'hidden',
-    backgroundColor: '#27272A',
+    backgroundColor: '#18181F',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.4,
+    shadowRadius: 16,
+    elevation: 10,
   },
   coverImage: {
     width: '100%',
@@ -386,67 +402,65 @@ const styles = StyleSheet.create({
   coverPlaceholder: {
     width: '100%',
     height: '100%',
-    backgroundColor: '#3D3D4A',
+    backgroundColor: '#27272A',
     alignItems: 'center',
     justifyContent: 'center',
   },
   coverPlaceholderText: {
-    fontSize: 20,
+    fontSize: 64,
     fontWeight: '600',
-    color: '#71717A',
+    color: '#52525B',
   },
-  infoContainer: {
-    flex: 1,
-    marginLeft: 12,
-    justifyContent: 'center',
-  },
+  // Book title
   bookTitle: {
-    fontSize: 15,
-    fontWeight: '600',
+    fontSize: 22,
+    fontWeight: '700',
     color: '#FAFAFA',
-    letterSpacing: -0.2,
+    marginTop: 24,
+    textAlign: 'center',
+    letterSpacing: -0.3,
   },
-  statusRow: {
-    flexDirection: 'row',
+  // Status indicator
+  statusContainer: {
+    marginTop: 32,
+    height: 24,
     alignItems: 'center',
-    marginTop: 6,
-    height: 16,
+    justifyContent: 'center',
   },
   statusIndicatorContainer: {
     position: 'relative',
-    height: 16,
-    minWidth: 100,
+    height: 24,
+    minWidth: 120,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   statusLayer: {
     position: 'absolute',
-    left: 0,
-    top: 0,
-    height: 16,
+    height: 24,
     justifyContent: 'center',
+    alignItems: 'center',
   },
-  visualizerLayer: {
-    left: 0,
-  },
+  visualizerLayer: {},
   loadingBarContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
   },
   loadingBarTrack: {
-    width: 60,
+    width: 80,
     height: 4,
     backgroundColor: 'rgba(167, 139, 250, 0.2)',
     borderRadius: 2,
     overflow: 'hidden',
   },
   loadingBarShimmer: {
-    width: 40,
+    width: 50,
     height: '100%',
     backgroundColor: '#A78BFA',
     borderRadius: 2,
   },
   loadingText: {
-    fontSize: 11,
+    fontSize: 12,
     color: '#A78BFA',
     fontWeight: '500',
     letterSpacing: 0.3,
@@ -454,26 +468,48 @@ const styles = StyleSheet.create({
   visualizer: {
     flexDirection: 'row',
     alignItems: 'flex-end',
-    height: 16,
-    gap: 3,
+    height: 24,
+    gap: 4,
   },
   waveBar: {
-    width: 4,
-    height: 16,
+    width: 5,
+    height: 24,
     backgroundColor: '#A78BFA',
     borderRadius: 2,
   },
-  controls: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  controlButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+  // Play button
+  playButton: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
     backgroundColor: 'rgba(167, 139, 250, 0.15)',
+    borderWidth: 1,
+    borderColor: 'rgba(167, 139, 250, 0.3)',
     alignItems: 'center',
     justifyContent: 'center',
+    marginTop: 32,
+  },
+  // Slider
+  sliderContainer: {
+    width: '80%',
+    marginTop: 40,
+    alignItems: 'center',
+  },
+  sliderLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#71717A',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: 12,
+  },
+  slider: {
+    width: '100%',
+    height: 40,
+  },
+  sliderValue: {
+    fontSize: 14,
+    color: '#A1A1AA',
+    marginTop: 4,
   },
 });

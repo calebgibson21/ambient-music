@@ -4,6 +4,7 @@ import { StyleSheet, View, SafeAreaView, Platform, TouchableOpacity, Text } from
 import { Ionicons } from '@expo/vector-icons';
 import { BookSearch } from './src/components/BookSearch';
 import { ReadingList } from './src/components/ReadingList';
+import { PlayingScreen } from './src/components/PlayingScreen';
 import { MusicPlayer } from './src/components/MusicPlayer';
 import { MusicProvider } from './src/context/MusicContext';
 
@@ -11,6 +12,7 @@ type Tab = 'search' | 'list';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<Tab>('search');
+  const [isPlayerExpanded, setIsPlayerExpanded] = useState(false);
 
   return (
     <MusicProvider>
@@ -18,9 +20,9 @@ export default function App() {
         <StatusBar style="light" />
         <SafeAreaView style={styles.safeArea}>
           {activeTab === 'search' ? <BookSearch /> : <ReadingList />}
-          
-          {/* Floating Music Player */}
-          <MusicPlayer />
+
+          {/* Floating Music Player - hidden when full-screen player is open */}
+          {!isPlayerExpanded && <MusicPlayer onExpand={() => setIsPlayerExpanded(true)} />}
           
           {/* Bottom Navigation */}
           <View style={styles.bottomNav}>
@@ -55,6 +57,11 @@ export default function App() {
           </TouchableOpacity>
         </View>
         </SafeAreaView>
+
+        {/* Full-screen Player Overlay */}
+        {isPlayerExpanded && (
+          <PlayingScreen onClose={() => setIsPlayerExpanded(false)} />
+        )}
       </View>
     </MusicProvider>
   );
