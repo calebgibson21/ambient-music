@@ -12,9 +12,10 @@ import {
   Pressable,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { ReadingStatus, ReadingListItem, READING_STATUS_OPTIONS } from '../types/book';
+import { Book, ReadingStatus, ReadingListItem, READING_STATUS_OPTIONS } from '../types/book';
 import { useReadingList } from '../hooks/useReadingList';
 import { useMusic } from '../context/MusicContext';
+import { BookDetailModal } from './BookDetailModal';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -78,13 +79,14 @@ function TabBar({ activeTab, onTabChange, counts }: TabBarProps) {
 
 interface ReadingListCardProps {
   item: ReadingListItem;
+  onPress: () => void;
   onChangeStatus: (status: ReadingStatus) => void;
   onRemove: () => void;
   onPlayMusic: () => void;
   isPlaying: boolean;
 }
 
-function ReadingListCard({ item, onChangeStatus, onRemove, onPlayMusic, isPlaying }: ReadingListCardProps) {
+function ReadingListCard({ item, onPress, onChangeStatus, onRemove, onPlayMusic, isPlaying }: ReadingListCardProps) {
   const [showActions, setShowActions] = useState(false);
   const { book, status, dateAdded } = item;
   
@@ -97,6 +99,7 @@ function ReadingListCard({ item, onChangeStatus, onRemove, onPlayMusic, isPlayin
   return (
     <TouchableOpacity
       style={styles.bookCard}
+      onPress={onPress}
       onLongPress={() => setShowActions(true)}
       activeOpacity={0.8}
     >
@@ -259,6 +262,7 @@ function EmptyState({ status }: EmptyStateProps) {
 
 export function ReadingList() {
   const [activeTab, setActiveTab] = useState<ReadingStatus>('reading');
+  const [selectedBook, setSelectedBook] = useState<Book | null>(null);
   const { items, isLoading, getBooksByStatus, updateStatus, removeBook } = useReadingList();
   const { status: musicStatus, currentBook, play: playMusic } = useMusic();
 
@@ -302,6 +306,7 @@ export function ReadingList() {
           renderItem={({ item }) => (
             <ReadingListCard
               item={item}
+              onPress={() => setSelectedBook(item.book)}
               onChangeStatus={(status) => updateStatus(item.book.id, status)}
               onRemove={() => removeBook(item.book.id)}
               onPlayMusic={() => playMusic(item.book)}
@@ -312,6 +317,12 @@ export function ReadingList() {
           showsVerticalScrollIndicator={false}
         />
       )}
+
+      <BookDetailModal
+        book={selectedBook}
+        visible={selectedBook !== null}
+        onClose={() => setSelectedBook(null)}
+      />
     </View>
   );
 }
