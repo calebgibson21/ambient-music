@@ -15,7 +15,6 @@ import { Ionicons } from '@expo/vector-icons';
 import { Book, ReadingStatus, ReadingListItem, READING_STATUS_OPTIONS } from '../types/book';
 import { useReadingList } from '../hooks/useReadingList';
 import { useMusic } from '../context/MusicContext';
-import { BookDetailModal } from './BookDetailModal';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -156,13 +155,12 @@ function ReadingListCard({ item, onViewDetails, onChangeStatus, onRemove, onPlay
         visible={showActions}
         transparent
         animationType="fade"
+        statusBarTranslucent={true}
         onRequestClose={() => setShowActions(false)}
       >
-        <Pressable 
-          style={styles.modalBackdrop} 
-          onPress={() => setShowActions(false)}
-        >
-          <Pressable style={styles.actionsMenu} onPress={(e) => e.stopPropagation()}>
+        <View style={styles.modalBackdrop}>
+          <Pressable style={StyleSheet.absoluteFill} onPress={() => setShowActions(false)} />
+          <View style={styles.actionsMenu}>
             <Text style={styles.actionsTitle}>{book.title}</Text>
             <TouchableOpacity
               style={styles.viewDetailsAction}
@@ -225,8 +223,8 @@ function ReadingListCard({ item, onViewDetails, onChangeStatus, onRemove, onPlay
             >
               <Text style={styles.cancelActionText}>Cancel</Text>
             </TouchableOpacity>
-          </Pressable>
-        </Pressable>
+          </View>
+        </View>
       </Modal>
     </TouchableOpacity>
   );
@@ -270,9 +268,12 @@ function EmptyState({ status }: EmptyStateProps) {
 // Main ReadingList Component
 // ============================================================================
 
-export function ReadingList() {
+interface ReadingListProps {
+  onOpenBookDetail: (book: Book) => void;
+}
+
+export function ReadingList({ onOpenBookDetail }: ReadingListProps) {
   const [activeTab, setActiveTab] = useState<ReadingStatus>('reading');
-  const [selectedBook, setSelectedBook] = useState<Book | null>(null);
   const { items, isLoading, getBooksByStatus, updateStatus, removeBook } = useReadingList();
   const { status: musicStatus, currentBook, play: playMusic } = useMusic();
 
@@ -316,7 +317,7 @@ export function ReadingList() {
           renderItem={({ item }) => (
             <ReadingListCard
               item={item}
-              onViewDetails={() => setSelectedBook(item.book)}
+              onViewDetails={() => onOpenBookDetail(item.book)}
               onChangeStatus={(status) => updateStatus(item.book.id, status)}
               onRemove={() => removeBook(item.book.id)}
               onPlayMusic={() => playMusic(item.book)}
@@ -327,12 +328,6 @@ export function ReadingList() {
           showsVerticalScrollIndicator={false}
         />
       )}
-
-      <BookDetailModal
-        book={selectedBook}
-        visible={selectedBook !== null}
-        onClose={() => setSelectedBook(null)}
-      />
     </View>
   );
 }

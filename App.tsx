@@ -6,20 +6,23 @@ import { BookSearch } from './src/components/BookSearch';
 import { ReadingList } from './src/components/ReadingList';
 import { PlayingScreen } from './src/components/PlayingScreen';
 import { MusicPlayer } from './src/components/MusicPlayer';
+import { BookDetailModal } from './src/components/BookDetailModal';
 import { MusicProvider } from './src/context/MusicContext';
+import { Book } from './src/types/book';
 
 type Tab = 'search' | 'list';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<Tab>('search');
   const [isPlayerExpanded, setIsPlayerExpanded] = useState(false);
+  const [selectedDetailBook, setSelectedDetailBook] = useState<Book | null>(null);
 
   return (
     <MusicProvider>
       <View style={styles.container}>
         <StatusBar style="light" />
         <SafeAreaView style={styles.safeArea}>
-          {activeTab === 'search' ? <BookSearch /> : <ReadingList />}
+          {activeTab === 'search' ? <BookSearch /> : <ReadingList onOpenBookDetail={setSelectedDetailBook} />}
 
           {/* Floating Music Player - hidden when full-screen player is open */}
           {!isPlayerExpanded && <MusicPlayer onExpand={() => setIsPlayerExpanded(true)} />}
@@ -62,6 +65,13 @@ export default function App() {
         {isPlayerExpanded && (
           <PlayingScreen onClose={() => setIsPlayerExpanded(false)} />
         )}
+
+        {/* Book Detail Overlay */}
+        <BookDetailModal
+          book={selectedDetailBook}
+          visible={selectedDetailBook !== null}
+          onClose={() => setSelectedDetailBook(null)}
+        />
       </View>
     </MusicProvider>
   );
@@ -83,6 +93,7 @@ const styles = StyleSheet.create({
     borderTopColor: '#27272A',
     paddingVertical: 8,
     paddingHorizontal: 40,
+    zIndex: 100,
   },
   navTab: {
     flex: 1,

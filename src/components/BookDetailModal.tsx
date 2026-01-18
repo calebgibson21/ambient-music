@@ -1,14 +1,14 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   View,
   Text,
-  Modal,
   TouchableOpacity,
   StyleSheet,
   ScrollView,
   Image,
   Dimensions,
   ActivityIndicator,
+  Animated,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Book, BookDetails } from '../types/book';
@@ -24,21 +24,45 @@ interface BookDetailModalProps {
 }
 
 /**
- * Modal that displays detailed book information with option to play ambient music.
+ * Overlay that displays detailed book information with option to play ambient music.
+ * Positioned above the bottom navigation bar.
  */
 export function BookDetailModal({ book, visible, onClose }: BookDetailModalProps) {
   const { details, isLoading } = useBookDetailsAuto(book);
   const { status, currentBook, play } = useMusic();
   const [isDescriptionExpanded, setIsDescriptionExpanded] = useState(false);
   const [isAuthorBioExpanded, setIsAuthorBioExpanded] = useState(false);
+  const slideAnim = useRef(new Animated.Value(1)).current;
 
   // Reset expanded states when book changes or modal closes
-  React.useEffect(() => {
+  useEffect(() => {
     if (!visible || !book) {
       setIsDescriptionExpanded(false);
       setIsAuthorBioExpanded(false);
     }
   }, [visible, book?.id]);
+
+  // Animate in when visible
+  useEffect(() => {
+    if (visible) {
+      Animated.spring(slideAnim, {
+        toValue: 0,
+        useNativeDriver: true,
+        friction: 8,
+        tension: 65,
+      }).start();
+    }
+  }, [visible, slideAnim]);
+
+  const handleClose = () => {
+    Animated.timing(slideAnim, {
+      toValue: 1,
+      duration: 250,
+      useNativeDriver: true,
+    }).start(() => {
+      onClose();
+    });
+  };
 
   const isCurrentlyPlaying = currentBook?.id === book?.id;
   const isMusicLoading = status === 'connecting' && isCurrentlyPlaying;
@@ -49,22 +73,21 @@ export function BookDetailModal({ book, visible, onClose }: BookDetailModalProps
     }
   };
 
-  if (!book) {
+  if (!book || !visible) {
     return null;
   }
 
+  const translateY = slideAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0, SCREEN_HEIGHT],
+  });
+
   return (
-    <Modal
-      visible={visible}
-      animationType="slide"
-      presentationStyle="pageSheet"
-      onRequestClose={onClose}
-    >
-      <View style={styles.container}>
+    <Animated.View style={[styles.container, { transform: [{ translateY }] }]}>
         {/* Header with close button */}
         <View style={styles.header}>
-          <TouchableOpacity style={styles.closeButton} onPress={onClose}>
-            <Ionicons name="close" size={20} color="#A1A1AA" />
+          <TouchableOpacity style={styles.closeButton} onPress={handleClose}>
+            <Ionicons name="chevron-down" size={24} color="#A1A1AA" />
           </TouchableOpacity>
         </View>
 
@@ -213,28 +236,34 @@ export function BookDetailModal({ book, visible, onClose }: BookDetailModalProps
             )}
           </View>
         </ScrollView>
-      </View>
-    </Modal>
+    </Animated.View>
   );
 }
 
+const BOTTOM_NAV_HEIGHT = 70;
+
 const styles = StyleSheet.create({
   container: {
-    flex: 1,
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: BOTTOM_NAV_HEIGHT,
     backgroundColor: '#0F0F14',
+    zIndex: 50,
   },
   header: {
     flexDirection: 'row',
-    justifyContent: 'flex-end',
+    justifyContent: 'flex-start',
     paddingHorizontal: 16,
-    paddingTop: 16,
+    paddingTop: 50,
     paddingBottom: 8,
   },
   closeButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: '#27272A',
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(39, 39, 42, 0.8)',
     alignItems: 'center',
     justifyContent: 'center',
   },
