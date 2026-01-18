@@ -79,14 +79,14 @@ function TabBar({ activeTab, onTabChange, counts }: TabBarProps) {
 
 interface ReadingListCardProps {
   item: ReadingListItem;
-  onPress: () => void;
+  onViewDetails: () => void;
   onChangeStatus: (status: ReadingStatus) => void;
   onRemove: () => void;
   onPlayMusic: () => void;
   isPlaying: boolean;
 }
 
-function ReadingListCard({ item, onPress, onChangeStatus, onRemove, onPlayMusic, isPlaying }: ReadingListCardProps) {
+function ReadingListCard({ item, onViewDetails, onChangeStatus, onRemove, onPlayMusic, isPlaying }: ReadingListCardProps) {
   const [showActions, setShowActions] = useState(false);
   const { book, status, dateAdded } = item;
   
@@ -99,7 +99,6 @@ function ReadingListCard({ item, onPress, onChangeStatus, onRemove, onPlayMusic,
   return (
     <TouchableOpacity
       style={styles.bookCard}
-      onPress={onPress}
       onLongPress={() => setShowActions(true)}
       activeOpacity={0.8}
     >
@@ -165,6 +164,17 @@ function ReadingListCard({ item, onPress, onChangeStatus, onRemove, onPlayMusic,
         >
           <Pressable style={styles.actionsMenu} onPress={(e) => e.stopPropagation()}>
             <Text style={styles.actionsTitle}>{book.title}</Text>
+            <TouchableOpacity
+              style={styles.viewDetailsAction}
+              onPress={() => {
+                onViewDetails();
+                setShowActions(false);
+              }}
+            >
+              <Ionicons name="information-circle-outline" size={18} color="#A78BFA" style={styles.actionIcon} />
+              <Text style={styles.viewDetailsText}>View Details</Text>
+            </TouchableOpacity>
+            <View style={styles.actionsDivider} />
             <Text style={styles.actionsSubtitle}>Change Status</Text>
             {READING_STATUS_OPTIONS.map((option) => (
               <TouchableOpacity
@@ -306,7 +316,7 @@ export function ReadingList() {
           renderItem={({ item }) => (
             <ReadingListCard
               item={item}
-              onPress={() => setSelectedBook(item.book)}
+              onViewDetails={() => setSelectedBook(item.book)}
               onChangeStatus={(status) => updateStatus(item.book.id, status)}
               onRemove={() => removeBook(item.book.id)}
               onPlayMusic={() => playMusic(item.book)}
@@ -516,8 +526,21 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#FAFAFA',
     textAlign: 'center',
-    marginBottom: 4,
-    numberOfLines: 2,
+    marginBottom: 16,
+  },
+  viewDetailsAction: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    backgroundColor: 'rgba(167, 139, 250, 0.12)',
+  },
+  viewDetailsText: {
+    flex: 1,
+    fontSize: 16,
+    color: '#A78BFA',
+    fontWeight: '600',
   },
   actionsSubtitle: {
     fontSize: 12,
